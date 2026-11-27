@@ -203,8 +203,9 @@ text.
   side (looking toward -X), the top (looking down, the back at the top, exactly as
   each `level` block is written) and a 3/4 view from the front right. The top view's
   grid lines mark voxel boundaries, so a voxel's column and row can be counted.
-- **Use `meshbox check --json`** for diagnostics: each has a stable `code`, and a
-  `line` and `column` when it concerns a place in a file.
+- **Use `meshbox check <file> --json`** (`-` for standard input) for diagnostics:
+  each has a stable `code`, and a `line` and `column` when it concerns a place in a
+  file.
 - **Keep to a scale.** At the default `unit=1/16`, sixteen voxels are a meter; a
   character is 24 to 32 voxels tall, a door about 32.
 - **Put pivots at the feet.** The default origin is the center of the bottom face,
@@ -259,7 +260,8 @@ meshbox render <file> --out <dir> [--scale <n>] [--model <name>] [--json]
   current directory; a file's imports are read relative to the file.
 - Exit statuses: 0 success; 1 the file has errors, or what is asked of it cannot be
   done (an unknown `--model`, an output past the limits); 2 bad usage, or an output
-  that is a link or would replace an input; 3 an I/O error.
+  that is a symbolic link or would replace an input (a hard link is not detected); 3
+  an I/O error.
 
 ## Errors
 

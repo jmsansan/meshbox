@@ -55,7 +55,7 @@ The first release: voxel models from text to glTF and a preview sheet.
   `model-NAME.glb` per model, `palette.png`, `preview.png` and `meshbox.json`, and
   nothing when the file has errors or an output does not fit. `-` reads standard
   input. Exit statuses: 0 success, 1 errors in the file or in what is asked of it, 2
-  bad usage or an unsafe output (a link, or an input it would replace), 3 I/O
+  bad usage or an unsafe output (a symbolic link, or an input it would replace), 3 I/O
   errors.
 - The README in full, `examples/showcase.meshbox` (a toadstool, a treasure chest and a
   fence post sharing one palette) and its preview in `docs/showcase-preview.png`; a
