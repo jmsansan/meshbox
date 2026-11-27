@@ -88,6 +88,14 @@ impl Files {
                 continue;
             }
             // A name may be quoted, as in `import "palettes.meshbox"`.
+            let quoted = name_token.text.starts_with('"');
+            if quoted != (name_token.text.len() > 1 && name_token.text.ends_with('"')) {
+                loading.errors.push(name_token.error(
+                    ErrorCode::Syntax,
+                    format!("`{}` has one quote; a quoted name has two", name_token.text),
+                ));
+                continue;
+            }
             let written = name_token
                 .text
                 .strip_prefix('"')

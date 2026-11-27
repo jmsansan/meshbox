@@ -654,3 +654,8 @@ fn review_cases_twelve() {
     let output = meshbox(&["render", "s.meshbox", "--model", "--model", "--help"]);
     assert_eq!(status(&output), 0);
 }
+
+#[test]
+fn an_empty_file_argument_is_bad_usage() {
+    assert_eq!(status(&meshbox(&["check", ""])), 2);
+}

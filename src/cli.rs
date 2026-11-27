@@ -170,7 +170,9 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
             }
         }
     }
-    let file = file.ok_or("missing <file>")?;
+    let file = file
+        .filter(|f| !f.is_empty())
+        .ok_or("missing <file>, or an empty one")?;
     if command == "render" && out.is_none() {
         return Err("render needs --out <dir>".to_owned());
     }

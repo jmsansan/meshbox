@@ -217,3 +217,15 @@ fn a_drive_relative_name_is_refused() {
     assert_eq!(errors.len(), 1, "{errors:?}");
     assert_eq!(errors[0].code, ErrorCode::InvalidArgument);
 }
+
+#[test]
+fn review_cases_thirteen() {
+    // A byte order mark is not text, in the file parsed or an import.
+    let mut loader = files(&[("p.meshbox", "\u{feff}palette field\n  k #000000\n")]);
+    let text = format!("\u{feff}import p.meshbox\n{MODEL}");
+    assert!(check_with_loader(&text, &Limits::default(), &mut loader).is_empty());
+    // One quote is a syntax error, not a file name.
+    let errors = check_with_loader("import \"p.meshbox\n", &Limits::default(), &mut loader);
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].code, ErrorCode::Syntax);
+}

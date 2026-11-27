@@ -60,6 +60,8 @@ pub(crate) fn lex<'a>(
     max_roots: usize,
     errors: &mut Errors,
 ) -> Vec<Node<'a>> {
+    // A byte order mark, as some editors write, is not text.
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let mut roots: Vec<Node<'a>> = Vec::new();
     // The open nodes, outermost first.
     let mut stack: Vec<Node<'a>> = Vec::new();
