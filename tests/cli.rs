@@ -472,3 +472,39 @@ fn render_does_not_follow_links() {
     assert_eq!(status(&output), 2);
     assert!(!out.join("model-cube.glb").exists());
 }
+
+#[test]
+fn review_cases_six() {
+    let d = dir("review-six");
+    // Any model's name may be selected, even one that looks like an option.
+    let scene = d.join("scene.meshbox");
+    std::fs::write(
+        &scene,
+        "palette p\n  a #ffffff\nvoxels -h 1x1x1 palette=p\n  level 0\n    a\nvoxels --draft 1x1x1 palette=p\n  level 0\n    a\n",
+    )
+    .unwrap();
+    for name in ["-h", "--draft"] {
+        let out = d.join(format!("out{name}"));
+        let output = meshbox(&[
+            "render",
+            scene.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+            "--model",
+            name,
+        ]);
+        assert_eq!(status(&output), 0, "{output:?}");
+        assert!(out.join(format!("model-{name}.glb")).exists());
+    }
+    // A duplicate of a definition in another file names that file.
+    std::fs::write(d.join("shared.meshbox"), "palette p\n  a #ffffff\n").unwrap();
+    let twice = d.join("twice.meshbox");
+    std::fs::write(&twice, "import shared.meshbox\npalette p\n  a #000000\n").unwrap();
+    let output = meshbox(&["check", twice.to_str().unwrap()]);
+    assert_eq!(status(&output), 1);
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("line 1 of `shared.meshbox`"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

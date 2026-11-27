@@ -219,8 +219,10 @@ pub(crate) fn resolve(from: &str, name: &str) -> String {
             None => name.to_owned(),
         }
     };
-    // A drive is the first part, and `..` does not go above it.
-    let fixed = usize::from(drive(&joined));
+    // A drive, or the server of a network path (`//server/share`), is the first part,
+    // and `..` does not go above it.
+    let unc = joined.starts_with("//") && !joined.starts_with("///");
+    let fixed = usize::from(drive(&joined) || unc);
     let mut parts: Vec<&str> = Vec::new();
     for part in joined.split('/') {
         match part {
@@ -233,7 +235,9 @@ pub(crate) fn resolve(from: &str, name: &str) -> String {
         }
     }
     let path = parts.join("/");
-    if joined.starts_with('/') {
+    if unc {
+        format!("//{path}")
+    } else if joined.starts_with('/') {
         format!("/{path}")
     } else {
         path
@@ -255,5 +259,7 @@ mod tests {
         assert_eq!(resolve("parts/p", "C:/shared/c"), "C:/shared/c");
         assert_eq!(resolve("C:/shared/c", "d"), "C:/shared/d");
         assert_eq!(resolve("C:/c", "../../d"), "C:/d");
+        assert_eq!(resolve("C:/w/s", "//server/art/p"), "//server/art/p");
+        assert_eq!(resolve("//server/art/p", "../../q"), "//server/q");
     }
 }

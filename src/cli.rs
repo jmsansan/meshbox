@@ -46,7 +46,12 @@ struct Options {
 }
 
 pub fn run(args: &[String]) -> ExitCode {
-    if args.is_empty() || args.iter().any(|a| a == "-h" || a == "--help") || args[0] == "help" {
+    // `-h` asks for help, unless it is a model's name: `--model -h`.
+    let help = args
+        .iter()
+        .enumerate()
+        .any(|(i, a)| (a == "-h" || a == "--help") && (i == 0 || args[i - 1] != "--model"));
+    if args.is_empty() || help || args[0] == "help" {
         return if !say(USAGE) {
             ExitCode::from(EXIT_IO)
         } else if args.is_empty() {
@@ -103,7 +108,10 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
                     .ok_or_else(|| format!("--scale is 1 to 32, not `{text}`"))?;
                 scale = Some(n);
             }
-            "--model" if command == "render" => model = Some(value("--model")?),
+            // Any name may follow, `--draft` included.
+            "--model" if command == "render" => {
+                model = Some(iter.next().cloned().ok_or("--model needs a value")?);
+            }
             flag if flag.starts_with("--") => {
                 return Err(format!("unknown option `{flag}` for `{command}`"));
             }

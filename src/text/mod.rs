@@ -91,6 +91,7 @@ pub(crate) fn parse(
         models: Vec::new(),
         definitions: 0,
         voxels: 0,
+        names: &files.names,
     };
     // Imported definitions take the place of their `import`; each file once.
     let mut walked = vec![false; lexed.len()];
@@ -178,6 +179,8 @@ struct Parser<'a, 'l> {
     palettes: Vec<PaletteDef<'a>>,
     models: Vec<ModelDef<'a>>,
     definitions: usize,
+    /// The names of the files of the parse, for messages.
+    names: &'l [String],
     /// Voxels of the models parsed so far, empty ones included.
     voxels: u64,
 }
@@ -296,11 +299,21 @@ fn check_name(token: Token) -> Parsed<()> {
     Ok(())
 }
 
-fn duplicate(name: Token, what: &str, first: Position) -> Error {
+/// `names` are the files of the parse, to name the one of the first definition when
+/// it is another.
+fn duplicate(name: Token, what: &str, first: Position, names: &[String]) -> Error {
+    let place = if first.file == name.pos.file {
+        String::new()
+    } else {
+        match names.get(first.file as usize).filter(|n| !n.is_empty()) {
+            Some(file) => format!(" of `{file}`"),
+            None => " of the text parsed".to_owned(),
+        }
+    };
     name.error(
         ErrorCode::DuplicateName,
         format!(
-            "{what} `{}` is already defined on line {}",
+            "{what} `{}` is already defined on line {}{place}",
             name.text, first.line
         ),
     )
@@ -620,7 +633,7 @@ impl<'a> Parser<'a, '_> {
             }
         }
         if let Some((first, _)) = ramps.iter().find(|(r, _)| r.text == name.text) {
-            return Err(duplicate(name, "Ramp", first.pos));
+            return Err(duplicate(name, "Ramp", first.pos, &[]));
         }
         if let Some(shift) = shift {
             if base.is_none() {
@@ -934,7 +947,8 @@ impl<'a> Parser<'a, '_> {
         let written: HashSet<&str> = self.palettes.iter().map(|d| d.name.text).collect();
         for def in &self.models {
             if let Some(&first) = names.get(def.name.text) {
-                self.errors.push(duplicate(def.name, "Model", first));
+                self.errors
+                    .push(duplicate(def.name, "Model", first, self.names));
                 continue;
             }
             names.insert(def.name.text, def.name.pos);
@@ -1033,6 +1047,7 @@ impl<'a> Parser<'a, '_> {
                     def.name,
                     "Palette",
                     self.palettes[first].name.pos,
+                    self.names,
                 ));
                 state[i] = State::Failed;
             } else {
