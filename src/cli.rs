@@ -30,7 +30,8 @@ Options:
   -V, --version Print the version.
 
 Exit status: 0 success, 1 the file has errors or what is asked of it cannot be
-done (an unknown --model, an output past the limits), 2 bad usage, 3 an I/O error.";
+done (an unknown --model, an output past the limits), 2 bad usage or an
+unsafe output (a link, or an input it would replace), 3 an I/O error.";
 
 /// Exit statuses, stable for scripts and assistants.
 const EXIT_INVALID: u8 = 1;

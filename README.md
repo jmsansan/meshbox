@@ -180,8 +180,9 @@ imports (or 256, whichever is less).
 - **The palette texture.** Every palette of a document in one RGBA8 image, one row
   per palette and one texel per key; each key's UV is its texel's center. Every model
   of a document samples this one texture, so a renderer can draw them all with one
-  material. A document whose palettes have no keys has no texture
-  (`palette_texture` is `None`), and `render` writes a 1×1 transparent `palette.png`.
+  texture: one opaque material, and one blended material for the translucent
+  triangles. A document whose palettes have no keys has no texture (`palette_texture`
+  is `None`), and `render` writes a 1×1 transparent `palette.png`.
 - **Binary glTF.** `Document::glb(name)`, or `Document::export()` and
   `Export::glb_files()` for a file per model. Each file has one scene with one node at
   the model's origin and, when the model has faces, the palette texture embedded as
@@ -257,8 +258,8 @@ meshbox render <file> --out <dir> [--scale <n>] [--model <name>] [--json]
 - `<file>` may be `-` for standard input, whose imports are read relative to the
   current directory; a file's imports are read relative to the file.
 - Exit statuses: 0 success; 1 the file has errors, or what is asked of it cannot be
-  done (an unknown `--model`, an output past the limits); 2 bad usage; 3 an I/O
-  error.
+  done (an unknown `--model`, an output past the limits); 2 bad usage, or an output
+  that is a link or would replace an input; 3 an I/O error.
 
 ## Errors
 
