@@ -89,13 +89,11 @@ impl PaletteTexture {
     }
 
     /// The texel of `key` of the palette at `index` in the document.
-    #[allow(dead_code)] // For the mesher.
     pub(crate) fn texel(&self, index: usize, key: char) -> Option<(u32, u32)> {
         self.texels.get(&(index, key)).copied()
     }
 
     /// The UV of the palette at `index`'s `key`.
-    #[allow(dead_code)] // For the mesher.
     pub(crate) fn uv_of(&self, index: usize, key: char) -> Option<[f32; 2]> {
         let (x, y) = self.texel(index, key)?;
         Some(texel_center(x, y, self.image.width(), self.image.height()))

@@ -12,10 +12,13 @@
 
 mod document;
 mod error;
+mod gltf;
 mod image;
 #[allow(dead_code)]
 mod json;
 mod limits;
+mod mesh;
+mod mesher;
 mod oklab;
 mod palette;
 pub mod png;
@@ -26,5 +29,6 @@ pub use document::{Document, check, check_with};
 pub use error::{Error, ErrorCode, Position, Result};
 pub use image::{Color, Image};
 pub use limits::Limits;
+pub use mesh::{Bounds, Mesh, MeshStats};
 pub use palette::{Palette, PaletteTexture};
 pub use voxel::VoxelModel;

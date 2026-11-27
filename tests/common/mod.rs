@@ -2,6 +2,7 @@
 #![allow(dead_code)]
 
 pub mod inflate;
+pub mod json;
 
 /// A decoded PNG: width, height and RGBA8 pixels.
 #[derive(Debug, PartialEq)]

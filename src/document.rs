@@ -1,6 +1,7 @@
+use crate::mesh::Mesh;
 use crate::palette::{Palette, PaletteTexture};
 use crate::voxel::VoxelModel;
-use crate::{Error, Limits, Result, text};
+use crate::{Error, ErrorCode, Limits, Result, gltf, mesher, png, text};
 
 /// A parsed meshbox file: its palettes and its models.
 ///
@@ -59,6 +60,76 @@ impl Document {
     /// The palette texture, within `limits`.
     pub fn palette_texture_with(&self, limits: &Limits) -> Result<Option<PaletteTexture>> {
         PaletteTexture::new(&self.palettes, limits)
+    }
+
+    /// The mesh of the model named `name`, within the default [`Limits`].
+    pub fn mesh(&self, name: &str) -> Result<Mesh> {
+        self.mesh_with(name, &Limits::default())
+    }
+
+    /// The mesh of the model named `name`, within `limits`.
+    pub fn mesh_with(&self, name: &str, limits: &Limits) -> Result<Mesh> {
+        let model = self.find(name)?;
+        let texture = self.palette_texture_with(limits)?;
+        mesher::mesh(model, &self.palettes, texture.as_ref(), limits, &mut 0)
+    }
+
+    /// The model named `name` as binary glTF, with the palette texture embedded,
+    /// within the default [`Limits`].
+    pub fn glb(&self, name: &str) -> Result<Vec<u8>> {
+        self.glb_with(name, &Limits::default())
+    }
+
+    /// The model named `name` as binary glTF, within `limits`.
+    pub fn glb_with(&self, name: &str, limits: &Limits) -> Result<Vec<u8>> {
+        let model = self.find(name)?;
+        let texture = self.palette_texture_with(limits)?;
+        let mesh = mesher::mesh(model, &self.palettes, texture.as_ref(), limits, &mut 0)?;
+        let png = texture.map(|t| png::encode(t.image()));
+        gltf::glb(
+            &[gltf::Part {
+                name: &model.name,
+                mesh: &mesh,
+            }],
+            png.as_deref(),
+        )
+    }
+
+    /// Every model as binary glTF, `model-NAME.glb`, in definition order, within
+    /// the default [`Limits`]. The vertex limit counts all the models together.
+    pub fn glb_files(&self) -> Result<Vec<(String, Vec<u8>)>> {
+        self.glb_files_with(&Limits::default())
+    }
+
+    /// Every model as binary glTF, within `limits`.
+    pub fn glb_files_with(&self, limits: &Limits) -> Result<Vec<(String, Vec<u8>)>> {
+        let texture = self.palette_texture_with(limits)?;
+        let png = texture.as_ref().map(|t| png::encode(t.image()));
+        let mut vertices = 0;
+        let mut files = Vec::with_capacity(self.models.len());
+        for model in &self.models {
+            let mesh = mesher::mesh(
+                model,
+                &self.palettes,
+                texture.as_ref(),
+                limits,
+                &mut vertices,
+            )?;
+            let bytes = gltf::glb(
+                &[gltf::Part {
+                    name: &model.name,
+                    mesh: &mesh,
+                }],
+                png.as_deref(),
+            )?;
+            files.push((format!("model-{}.glb", model.name), bytes));
+        }
+        Ok(files)
+    }
+
+    fn find(&self, name: &str) -> Result<&VoxelModel> {
+        self.model(name)
+            .ok_or_else(|| Error::new(ErrorCode::UnknownName, format!("Unknown model `{name}`")))
     }
 }
 
