@@ -131,6 +131,8 @@ struct Header<'a> {
     name: Token<'a>,
     args: Vec<Token<'a>>,
     options: Vec<(Token<'a>, Token<'a>)>,
+    /// The first option given twice, reported by `finish`.
+    twice: Option<Error>,
 }
 
 impl<'a> Header<'a> {
@@ -142,6 +144,7 @@ impl<'a> Header<'a> {
         check_name(name)?;
         let mut args = Vec::new();
         let mut options = Vec::new();
+        let mut twice = None;
         for &token in &tokens[2..] {
             match token.text.split_once('=') {
                 Some((key, value)) if !key.is_empty() => {
@@ -160,8 +163,11 @@ impl<'a> Header<'a> {
                         ));
                     }
                     if options.iter().any(|(k, _): &(Token, Token)| k.text == key) {
-                        return Err(token
-                            .error(ErrorCode::Syntax, format!("Option `{key}` is given twice")));
+                        // Kept for `finish`, so that an earlier error in a value wins.
+                        twice.get_or_insert_with(|| {
+                            token.error(ErrorCode::Syntax, format!("Option `{key}` is given twice"))
+                        });
+                        continue;
                     }
                     options.push((key_token, value_token));
                 }
@@ -180,6 +186,7 @@ impl<'a> Header<'a> {
             name,
             args,
             options,
+            twice,
         })
     }
 
@@ -189,17 +196,18 @@ impl<'a> Header<'a> {
         Some(self.options.remove(index).1)
     }
 
+    /// Rejects options not taken and options given twice: the first in the text.
     fn finish(self, what: &str, allowed: &str) -> Parsed<()> {
-        if let Some((key, _)) = self.options.first() {
-            return Err(key.error(
+        let unknown = self.options.first().map(|(key, _)| {
+            key.error(
                 ErrorCode::Syntax,
                 format!(
                     "Unknown option `{}` for a {what}; expected {allowed}",
                     key.text
                 ),
-            ));
-        }
-        Ok(())
+            )
+        });
+        first_error([unknown.as_ref(), self.twice.as_ref()])
     }
 }
 
@@ -1016,14 +1024,17 @@ impl<'a> Parser<'a, '_> {
                     }
                     depth[i] = depth[p] + 1;
                     if depth[i] > self.limits.max_nesting {
-                        self.errors.push(def.from.unwrap_or(def.name).error(
-                            ErrorCode::LimitExceeded,
-                            format!(
-                                "Palettes copied `from=` more than the limit of {} deep",
-                                self.limits.max_nesting
-                            ),
-                        ));
+                        // This palette and those copied from it on the chain are all
+                        // too deep: each is reported, so that the first in the text is.
                         for &j in &chain[..=n] {
+                            let def = &self.palettes[j];
+                            self.errors.push(def.from.unwrap_or(def.name).error(
+                                ErrorCode::LimitExceeded,
+                                format!(
+                                    "Palettes copied `from=` more than the limit of {} deep",
+                                    self.limits.max_nesting
+                                ),
+                            ));
                             state[j] = State::Failed;
                         }
                         break;

@@ -307,3 +307,45 @@ fn long_from_chains_stop_at_the_limit() {
     assert_eq!(errors[0].position.unwrap().line, 1);
     assert!(start.elapsed() < Duration::from_secs(20));
 }
+
+#[test]
+fn a_later_duplicate_option_does_not_hide_an_earlier_error() {
+    assert_eq!(
+        codes("voxels m 1x1x1 unit=0 palette=p palette=p\n"),
+        [(1, 21, ErrorCode::InvalidArgument)]
+    );
+    assert_eq!(
+        codes("palette p lint=bogus lint=allow(flat_ramp)\n"),
+        [(1, 16, ErrorCode::Syntax)]
+    );
+    assert_eq!(
+        codes("palette p from=a from=b\n"),
+        [(1, 18, ErrorCode::Syntax)]
+    );
+}
+
+#[test]
+fn every_palette_too_deep_is_reported_whatever_was_resolved_first() {
+    let chain: String = (0..34)
+        .map(|i| format!("palette p{i} from=p{}\n", i + 1))
+        .chain(std::iter::once("palette p34\n  a #ffffff\n".to_owned()))
+        .collect();
+    for text in [
+        format!("{chain}palette warmup from=p3\n"),
+        format!("palette warmup from=p3\n{chain}"),
+    ] {
+        let lines: Vec<usize> = check(&text)
+            .iter()
+            .map(|e| {
+                assert_eq!(e.code, ErrorCode::LimitExceeded);
+                e.position.unwrap().line
+            })
+            .collect();
+        let first = if text.starts_with("palette warmup") {
+            2
+        } else {
+            1
+        };
+        assert_eq!(lines, [first, first + 1], "{text}");
+    }
+}
