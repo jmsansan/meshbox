@@ -283,9 +283,15 @@ fn limits_bound_the_mesh() {
 fn meshing_64_cubed_is_fast() {
     let text = random_model(64, 7, &['a', 'b', '.', 'g']);
     let doc = Document::parse(&text).unwrap();
-    let start = std::time::Instant::now();
-    let mesh = doc.mesh("m").unwrap();
-    let elapsed = start.elapsed();
+    // The best of three runs, so that a busy shared runner does not decide it.
+    let mut elapsed = std::time::Duration::MAX;
+    let mut mesh = None;
+    for _ in 0..3 {
+        let start = std::time::Instant::now();
+        mesh = Some(doc.mesh("m").unwrap());
+        elapsed = elapsed.min(start.elapsed());
+    }
+    let mesh = mesh.unwrap();
     eprintln!("meshed 64x64x64 in {elapsed:?}");
     assert!(mesh.stats().triangles > 0);
     if !cfg!(debug_assertions) {
