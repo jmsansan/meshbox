@@ -561,7 +561,8 @@ fn review_cases_eight() {
     // One file reached by a relative and an absolute spelling is one file.
     std::fs::create_dir_all(d.join("props")).unwrap();
     std::fs::write(d.join("shared.meshbox"), "palette p\n  a #ffffff\n").unwrap();
-    let full = std::fs::canonicalize(&d).unwrap().join("shared.meshbox");
+    // The spelling the command uses for the file given, which is not resolved.
+    let full = std::path::absolute(&d).unwrap().join("shared.meshbox");
     let full = full.to_str().unwrap().replace('\\', "/");
     let full = full.strip_prefix("//?/").unwrap_or(&full).to_owned();
     std::fs::write(
