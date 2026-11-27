@@ -203,10 +203,10 @@ fn lint_options_are_checked_as_spritebox_checks_them() {
 
 #[test]
 fn names_are_short() {
-    let long = "n".repeat(65);
+    let long = "n".repeat(129);
     assert_eq!(
         at(&format!("palette {long}\n")),
         [(1, 9, ErrorCode::InvalidArgument)]
     );
-    assert!(check(&format!("palette {}\n", "n".repeat(64))).is_empty());
+    assert!(check(&format!("palette {}\n", "n".repeat(128))).is_empty());
 }

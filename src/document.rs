@@ -62,8 +62,8 @@ impl Document {
     }
 }
 
-/// Parses `text` and returns every error, ordered by position: an empty list when the
-/// text is valid.
+/// Parses `text` and returns every error, ordered by position, up to 1000: an empty
+/// list when the text is valid.
 ///
 /// ```
 /// let errors = meshbox::check("palette p\n  rr #ff0000\nvoxels\n");

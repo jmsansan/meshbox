@@ -5,6 +5,7 @@ pub(crate) mod lex;
 use std::collections::HashMap;
 
 use crate::document::Document;
+use crate::error::Errors;
 use crate::palette::Palette;
 use crate::voxel::VoxelModel;
 use crate::{Color, Error, ErrorCode, Limits, Position};
@@ -17,8 +18,9 @@ const DIRECTIVES: &str = "`palette` or `voxels`";
 /// More options than any directive takes, so that checking for duplicates stays cheap.
 const MAX_OPTIONS: usize = 16;
 
-/// The longest name, so that messages and lookups that copy names stay small.
-const MAX_NAME: usize = 64;
+/// The longest name, so that messages and lookups that copy names stay small. The one
+/// rule of palettes that spritebox does not share: it takes longer names.
+const MAX_NAME: usize = 128;
 
 /// Directives of spritebox that meshbox does not read (#7).
 const SPRITEBOX_DIRECTIVES: &[&str] = &[
@@ -45,7 +47,7 @@ const RESERVED_KEYS: &[char] = &[';', '(', ')', ',', '='];
 /// Parses `text` and returns the document, or every error found, ordered by
 /// position.
 pub(crate) fn parse(text: &str, limits: &Limits) -> Result<Document, Vec<Error>> {
-    let mut errors = Vec::new();
+    let mut errors = Errors::default();
     if text.len() > limits.max_text_bytes {
         return Err(vec![Error::at(
             Position::new(1, 1),
@@ -83,7 +85,7 @@ pub(crate) fn parse(text: &str, limits: &Limits) -> Result<Document, Vec<Error>>
         }
     }
     let document = parser.resolve();
-    let mut errors = parser.errors;
+    let mut errors = parser.errors.into_vec();
     if errors.is_empty() {
         Ok(document)
     } else {
@@ -116,7 +118,7 @@ struct ModelDef<'a> {
 
 struct Parser<'a, 'l> {
     limits: &'l Limits,
-    errors: Vec<Error>,
+    errors: Errors,
     palettes: Vec<PaletteDef<'a>>,
     models: Vec<ModelDef<'a>>,
     definitions: usize,
@@ -748,7 +750,7 @@ impl<'a> Parser<'a, '_> {
     }
 
     /// The rows of a level, `depth` rows of `width` keys, each with its `z`. Errors go
-    /// to `self.errors`, and only the rows of the right width are returned, so that
+    /// to `self.errors`, and every row is returned, of the right width or not, so that
     /// their keys are still checked.
     fn level(&mut self, node: &Node<'a>, width: u32, depth: u32) -> Vec<(usize, Token<'a>)> {
         let mut rows = Vec::new();
@@ -785,8 +787,8 @@ impl<'a> Parser<'a, '_> {
                     ErrorCode::SizeMismatch,
                     format!("A row has {length} voxels; the model is {width} wide"),
                 ));
-                continue;
             }
+            // Kept whatever its width, so that its keys are checked too.
             rows.push((count - 1, row));
         }
         if count < depth as usize {
@@ -857,11 +859,14 @@ impl<'a> Parser<'a, '_> {
                             continue;
                         }
                         let Some(k) = keys.iter().position(|&c| c == key) else {
-                            self.errors.push(Error::at(
-                                row.at(x),
-                                ErrorCode::UnknownName,
-                                format!("Key `{key}` is not in palette `{}`", palette.name),
-                            ));
+                            // Past the cap, the message is not even formatted.
+                            if !self.errors.is_full() {
+                                self.errors.push(Error::at(
+                                    row.at(x),
+                                    ErrorCode::UnknownName,
+                                    format!("Key `{key}` is not in palette `{}`", palette.name),
+                                ));
+                            }
                             ok = false;
                             continue;
                         };
@@ -869,9 +874,9 @@ impl<'a> Parser<'a, '_> {
                         if palette.keys[k].1.a == 0 {
                             continue;
                         }
-                        // Rows past the depth are an error already; their keys are still
-                        // checked.
-                        if z >= d as usize {
+                        // Rows past the depth and keys past the width are errors already;
+                        // their keys are still checked.
+                        if z >= d as usize || x >= w as usize {
                             continue;
                         }
                         let i = ((*y as usize * d as usize) + z) * w as usize + x;

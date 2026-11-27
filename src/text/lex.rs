@@ -1,5 +1,6 @@
 //! Splits text into lines of words with their positions, nested by indentation.
 
+use crate::error::Errors;
 use crate::{Error, ErrorCode, Position};
 
 /// A word of a line: text without spaces, except inside parentheses.
@@ -53,7 +54,7 @@ impl<'a> Node<'a> {
 /// Splits `text` into a tree of lines. Errors are appended to `errors`; the lines
 /// they concern are left out.
 /// Positions name `file`, the index of the text among the files of a parse.
-pub(crate) fn lex<'a>(text: &'a str, file: u32, errors: &mut Vec<Error>) -> Vec<Node<'a>> {
+pub(crate) fn lex<'a>(text: &'a str, file: u32, errors: &mut Errors) -> Vec<Node<'a>> {
     let mut roots: Vec<Node<'a>> = Vec::new();
     // The open nodes, outermost first.
     let mut stack: Vec<Node<'a>> = Vec::new();
@@ -116,12 +117,7 @@ fn close<'a>(stack: &mut Vec<Node<'a>>, roots: &mut Vec<Node<'a>>) {
     }
 }
 
-fn lex_line<'a>(
-    raw: &'a str,
-    file: u32,
-    number: usize,
-    errors: &mut Vec<Error>,
-) -> Option<Line<'a>> {
+fn lex_line<'a>(raw: &'a str, file: u32, number: usize, errors: &mut Errors) -> Option<Line<'a>> {
     let content = match raw.find(';') {
         Some(i) => &raw[..i],
         None => raw,
@@ -200,13 +196,13 @@ mod tests {
 
     #[test]
     fn nests_by_indentation() {
-        let mut errors = Vec::new();
+        let mut errors = crate::error::Errors::default();
         let nodes = lex(
             "a 1 ; comment\n  b\n    c\n    d\n  e\n\n   ; only a comment\nf\r\n  g(1, 2) h\n",
             0,
             &mut errors,
         );
-        assert!(errors.is_empty(), "{errors:?}");
+        assert!(errors.iter().next().is_none(), "{errors:?}");
         assert_eq!(shape(&nodes), "a 1[b[c, d], e], f[g(1, 2) h]");
         let g = nodes[1].children[0].line.tokens[0];
         assert_eq!((g.pos.line, g.pos.column), (9, 3));
@@ -216,7 +212,7 @@ mod tests {
 
     #[test]
     fn columns_count_characters() {
-        let mut errors = Vec::new();
+        let mut errors = crate::error::Errors::default();
         let nodes = lex("é ü x", 0, &mut errors);
         let x = nodes[0].line.tokens[2];
         assert_eq!(x.pos.column, 5);
@@ -224,7 +220,7 @@ mod tests {
 
     #[test]
     fn reports_bad_indentation() {
-        let mut errors = Vec::new();
+        let mut errors = crate::error::Errors::default();
         let nodes = lex(" a\nb\n    c\n  d\n\te\n", 0, &mut errors);
         let found: Vec<(usize, usize)> = errors
             .iter()

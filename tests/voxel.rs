@@ -238,3 +238,31 @@ fn raised_limits_cannot_overflow_the_allocation() {
     assert_eq!(errors.len(), 1);
     assert_eq!(errors[0].code, ErrorCode::LimitExceeded);
 }
+
+#[test]
+fn rows_of_the_wrong_width_still_have_their_keys_checked() {
+    let p = "palette p\n  a #ffffff\n";
+    assert_eq!(
+        codes(&format!(
+            "{p}voxels m 1x1x1 palette=p\n  level 0\n    a\n    az\n"
+        )),
+        [
+            (6, 5, ErrorCode::SizeMismatch),
+            (6, 6, ErrorCode::SizeMismatch),
+            (6, 6, ErrorCode::UnknownName)
+        ]
+    );
+}
+
+#[test]
+fn diagnostics_are_capped() {
+    let mut text = String::from("palette p\n  a #ffffff\nvoxels m 256x1x1 palette=p\n  level 0\n");
+    for _ in 0..20 {
+        text.push_str("    ");
+        text.push_str(&"z".repeat(256));
+        text.push('\n');
+    }
+    let errors = check(&text);
+    assert_eq!(errors.len(), 1000);
+    assert!(errors.windows(2).all(|w| w[0].position <= w[1].position));
+}

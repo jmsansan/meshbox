@@ -159,3 +159,29 @@ impl From<std::io::Error> for Error {
 
 /// A result with this crate's [`Error`].
 pub type Result<T> = std::result::Result<T, Error>;
+
+/// The most errors one parse keeps: past them, more of the same file's mistakes add
+/// nothing a person can act on, and keeping them would cost memory without bound.
+pub(crate) const MAX_ERRORS: usize = 1000;
+
+/// The errors of a parse, at most [`MAX_ERRORS`]; later ones are dropped.
+#[derive(Debug, Default)]
+pub(crate) struct Errors(Vec<Error>);
+
+impl Errors {
+    pub(crate) fn push(&mut self, error: Error) {
+        if self.0.len() < MAX_ERRORS {
+            self.0.push(error);
+        }
+    }
+    pub(crate) fn is_full(&self) -> bool {
+        self.0.len() >= MAX_ERRORS
+    }
+    #[cfg(test)]
+    pub(crate) fn iter(&self) -> std::slice::Iter<'_, Error> {
+        self.0.iter()
+    }
+    pub(crate) fn into_vec(self) -> Vec<Error> {
+        self.0
+    }
+}
