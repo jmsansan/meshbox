@@ -66,7 +66,7 @@ pub fn run(args: &[String]) -> ExitCode {
     let options = match parse_args(args) {
         Ok(options) => options,
         Err(message) => {
-            eprintln!("meshbox: {message}\n\n{USAGE}");
+            warn(&format!("meshbox: {message}\n\n{USAGE}"));
             return ExitCode::from(EXIT_USAGE);
         }
     };
@@ -85,8 +85,10 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
     let mut model = None;
     let mut json = false;
     while let Some(arg) = iter.next() {
+        // An option is not a value: `--out --json` is missing the directory.
         let mut value = |name: &str| {
             iter.next()
+                .filter(|v| !v.starts_with("--"))
                 .cloned()
                 .ok_or_else(|| format!("{name} needs a value"))
         };
@@ -240,7 +242,8 @@ fn execute(options: &Options) -> ExitCode {
     if options.command == "check" {
         return report(options, &[], &[], 0);
     }
-    match render(options, &document, &limits) {
+    let inputs: Vec<PathBuf> = loader.files.into_keys().collect();
+    match render(options, &document, &limits, &inputs) {
         Ok(written) => report(options, &[], &written, 0),
         Err((error, status, written)) => report(options, &[error], &written, status),
     }
@@ -305,6 +308,7 @@ fn render(
     options: &Options,
     document: &Document,
     limits: &Limits,
+    inputs: &[PathBuf],
 ) -> Result<Vec<PathBuf>, (Error, u8, Vec<PathBuf>)> {
     let invalid = |e: Error| (e, EXIT_INVALID, Vec::new());
     let names: Vec<&str> = match &options.model {
@@ -382,6 +386,25 @@ fn render(
         )
     };
     std::fs::create_dir_all(&out).map_err(|e| io(e, &out, &mut written))?;
+    // An output must not replace the file given or one it imports.
+    let outputs = export
+        .meshes()
+        .filter(|(n, _)| names.contains(n))
+        .map(|(n, _)| format!("model-{n}.glb"))
+        .chain(files.iter().map(|(n, _)| n.clone()));
+    for name in outputs {
+        let path = out.join(name);
+        if let Ok(real) = std::fs::canonicalize(&path) {
+            if inputs.contains(&real) {
+                let message = format!("Writing {} would replace an input", path.display());
+                return Err((
+                    Error::new(ErrorCode::InvalidArgument, message),
+                    EXIT_USAGE,
+                    Vec::new(),
+                ));
+            }
+        }
+    }
     for file in export.glb_files() {
         let (name, bytes) = match file {
             Ok(file) => file,
@@ -491,15 +514,17 @@ fn report(options: &Options, errors: &[Error], written: &[PathBuf], status: u8) 
     } else {
         for e in errors {
             match e.position {
-                Some(p) => eprintln!(
-                    "{}:{}:{}: error[{}]: {}",
-                    at(e),
-                    p.line,
-                    p.column,
-                    e.code,
-                    e.message
-                ),
-                None => eprintln!("{}: error[{}]: {}", at(e), e.code, e.message),
+                Some(p) => {
+                    printed &= warn(&format!(
+                        "{}:{}:{}: error[{}]: {}",
+                        at(e),
+                        p.line,
+                        p.column,
+                        e.code,
+                        e.message
+                    ));
+                }
+                None => printed &= warn(&format!("{}: error[{}]: {}", at(e), e.code, e.message)),
             }
         }
         for path in written {
@@ -507,7 +532,10 @@ fn report(options: &Options, errors: &[Error], written: &[PathBuf], status: u8) 
         }
         if !errors.is_empty() {
             let n = errors.len();
-            eprintln!("{file}: {n} error{}", if n == 1 { "" } else { "s" });
+            printed &= warn(&format!(
+                "{file}: {n} error{}",
+                if n == 1 { "" } else { "s" }
+            ));
         } else if options.command == "check" {
             printed &= say(&format!("{file}: ok"));
         }
@@ -539,6 +567,13 @@ fn quote(text: &str) -> String {
     }
     out.push('"');
     out
+}
+
+/// Prints a line on standard error; false when it cannot be written.
+pub fn warn(text: &str) -> bool {
+    use std::io::Write as _;
+    let mut err = std::io::stderr().lock();
+    writeln!(err, "{text}").and_then(|_| err.flush()).is_ok()
 }
 
 /// Prints a line on standard output; false when it cannot be written, as to a full

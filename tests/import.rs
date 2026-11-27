@@ -186,3 +186,16 @@ fn a_loader_error_keeps_its_position() {
     assert_eq!(errors.len(), 1);
     assert!(errors[0].message.contains("line 2, column 5"), "{errors:?}");
 }
+
+#[test]
+fn a_root_name_is_resolved_like_an_import() {
+    let mut loader = files(&[]);
+    let errors = meshbox::check_file_with_loader(
+        "./art/a.meshbox",
+        "import a.meshbox\n",
+        &Limits::default(),
+        &mut loader,
+    );
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].code, ErrorCode::Cycle);
+}

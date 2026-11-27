@@ -36,11 +36,13 @@ impl Files {
         loader: Option<&mut Loader>,
         errors: &mut Errors,
     ) -> Files {
+        // `./art/a.meshbox` is the name `art/a.meshbox` that its own imports resolve to.
+        let root_name = resolve("", root_name);
         let mut files = Files {
-            names: vec![root_name.to_owned()],
+            names: vec![root_name.clone()],
             texts: vec![root.to_owned()],
             targets: HashMap::new(),
-            index: HashMap::from([(root_name.to_owned(), 0)]),
+            index: HashMap::from([(root_name.clone(), 0)]),
             failed: HashSet::new(),
         };
         let mut loading = Loading {

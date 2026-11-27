@@ -413,3 +413,27 @@ fn a_case_alias_is_not_read_twice() {
         "duplicate_name"
     );
 }
+
+#[test]
+fn review_cases_three() {
+    let d = dir("review-three");
+    // Render does not replace its input.
+    let input = d.join("palette.png");
+    std::fs::write(&input, "; an empty document\n").unwrap();
+    let output = meshbox(&[
+        "render",
+        input.to_str().unwrap(),
+        "--out",
+        d.to_str().unwrap(),
+    ]);
+    assert_eq!(status(&output), 2);
+    assert_eq!(
+        std::fs::read_to_string(&input).unwrap(),
+        "; an empty document\n"
+    );
+    // An option is not the value of another.
+    let scene = d.join("scene.meshbox");
+    std::fs::write(&scene, VALID).unwrap();
+    let output = meshbox(&["render", scene.to_str().unwrap(), "--out", "--json"]);
+    assert_eq!(status(&output), 2);
+}
