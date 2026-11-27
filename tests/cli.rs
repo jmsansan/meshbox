@@ -508,3 +508,41 @@ fn review_cases_six() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+#[test]
+fn review_cases_seven() {
+    let d = dir("review-seven");
+    // Only the model selected is meshed: another one past the limits does not stop it.
+    let mut big = String::from(
+        "palette p\n  a #ffffff\nvoxels dot 1x1x1 palette=p\n  level 0\n    a\nvoxels board 64x64x64 palette=p\n",
+    );
+    for z in 0..64 {
+        big.push_str(&format!("  level {z}\n"));
+        for y in 0..64 {
+            let row: String = (0..64)
+                .map(|x| if (x + y + z) % 2 == 0 { 'a' } else { '.' })
+                .collect();
+            big.push_str(&format!("    {row}\n"));
+        }
+    }
+    let scene = d.join("scene.meshbox");
+    std::fs::write(&scene, big).unwrap();
+    let out = d.join("out");
+    let all = meshbox(&[
+        "render",
+        scene.to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
+    ]);
+    assert_eq!(status(&all), 1);
+    let one = meshbox(&[
+        "render",
+        scene.to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
+        "--model",
+        "dot",
+    ]);
+    assert_eq!(status(&one), 0, "{one:?}");
+    assert!(out.join("model-dot.glb").exists());
+}

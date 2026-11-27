@@ -205,8 +205,10 @@ impl lex::Token<'_> {
 
 /// The name of `name` imported from the file `from`: relative to `from`'s directory
 /// unless it starts with `/` or a drive such as `C:`, with `.` and `..` resolved, `/`
-/// between parts.
+/// between parts. A `\`, as Windows authors may write, separates parts as `/` does.
 pub(crate) fn resolve(from: &str, name: &str) -> String {
+    let (from, name) = (from.replace('\\', "/"), name.replace('\\', "/"));
+    let (from, name) = (from.as_str(), name.as_str());
     let drive = |n: &str| {
         let b = n.as_bytes();
         b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':'
@@ -223,11 +225,13 @@ pub(crate) fn resolve(from: &str, name: &str) -> String {
     // and `..` does not go above it.
     let unc = joined.starts_with("//") && !joined.starts_with("///");
     let fixed = usize::from(drive(&joined) || unc);
+    let rooted = joined.starts_with('/') || fixed == 1;
     let mut parts: Vec<&str> = Vec::new();
     for part in joined.split('/') {
         match part {
             "" | "." => {}
-            ".." if fixed == 1 && parts.len() == 1 => {}
+            // Nothing is above a root: `/`, a drive or a server.
+            ".." if rooted && parts.len() == fixed => {}
             ".." if parts.len() > fixed && parts.last().is_some_and(|p| *p != "..") => {
                 parts.pop();
             }
@@ -261,5 +265,8 @@ mod tests {
         assert_eq!(resolve("C:/c", "../../d"), "C:/d");
         assert_eq!(resolve("C:/w/s", "//server/art/p"), "//server/art/p");
         assert_eq!(resolve("//server/art/p", "../../q"), "//server/q");
+        assert_eq!(resolve("/art/scene", "../../shared"), "/shared");
+        assert_eq!(resolve("parts\\body", "palette"), "parts/palette");
+        assert_eq!(resolve("", "parts\\body"), "parts/body");
     }
 }

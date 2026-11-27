@@ -145,11 +145,22 @@ impl Document {
 
     /// Every model meshed, within `limits`.
     pub fn export_with(&self, limits: &Limits) -> Result<Export> {
+        let names: Vec<&str> = self.models.iter().map(|m| m.name.as_str()).collect();
+        self.export_models_with(&names, limits)
+    }
+
+    /// The models named in `names` meshed, in that order, within `limits`; the
+    /// vertex limit counts them together.
+    pub fn export_models_with(&self, names: &[&str], limits: &Limits) -> Result<Export> {
+        let selected = names
+            .iter()
+            .map(|&name| self.find(name))
+            .collect::<Result<Vec<_>>>()?;
         let texture = self.palette_texture_with(limits)?;
         let png = texture.as_ref().map(|t| png::encode(t.image()));
         let mut vertices = 0;
-        let mut models = Vec::with_capacity(self.models.len());
-        for model in &self.models {
+        let mut models = Vec::with_capacity(selected.len());
+        for model in selected {
             let mesh = mesher::mesh(
                 model,
                 &self.palettes,

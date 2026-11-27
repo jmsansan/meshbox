@@ -353,8 +353,11 @@ fn render(
             )));
         }
     }
-    // One export: the vertex limit counts every model, and the texture is made once.
-    let export = document.export_with(limits).map_err(invalid)?;
+    // One export of the models written: the vertex limit counts them together, and
+    // the texture is made once.
+    let export = document
+        .export_models_with(&names, limits)
+        .map_err(invalid)?;
     let preview_options = PreviewOptions {
         scale: options.scale,
         grid: true,
