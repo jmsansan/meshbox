@@ -20,8 +20,8 @@ land, see the table below). The same text gives the same bytes on every platform
 | Text format with exact diagnostics (line, column, stable code) | Available |
 | Palettes with spritebox's syntax, shared palette texture | Available |
 | Voxel models from stacked grids | Available |
-| Greedy meshing to a deterministic mesh | Planned (0.1) |
-| Binary glTF (`.glb`) export | Planned (0.1) |
+| Greedy meshing to a deterministic mesh | Available |
+| Binary glTF (`.glb`) export | Available |
 | Four-view preview sheet (PNG) | Planned (0.1) |
 | Imports through a loader, in memory and in WebAssembly | Planned (0.1) |
 | Command-line tool: `check` and `render` | Planned (0.1) |

@@ -17,3 +17,12 @@
   rows from the back (-Z) to the front (+Z), columns along +X, levels up +Y.
 - A PNG encoder of the crate's own: indexed (1 to 8 bits, with `tRNS`) for up to 256
   colors and RGBA8 otherwise, with no metadata chunks.
+- Greedy meshing: `Document::mesh` gives a `Mesh` of positions, normals, UVs and
+  `u32` indices, counter-clockwise, opaque triangles first and translucent ones after
+  `translucent_start`. Faces between solid voxels are dropped and faces of one key and
+  direction in a plane are merged into rectangles, in a fixed order, so the same text
+  gives the same bytes on every platform. `Mesh::stats` and `Mesh::bounds`.
+- Binary glTF: `Document::glb` and `Document::glb_files` write one scene with a node
+  per model at its origin, the palette texture embedded as PNG with nearest sampling
+  and clamped edges, an opaque material and, for translucent keys, a blended one.
+- `examples/embedded.rs`: glb files from text compiled into the program.

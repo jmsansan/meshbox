@@ -22,6 +22,15 @@ const MAX_OPTIONS: usize = 16;
 /// rule of palettes that spritebox does not share: it takes longer names.
 const MAX_NAME: usize = 128;
 
+/// The largest origin coordinate, in voxels.
+const MAX_ORIGIN: f32 = 65536.0;
+/// The largest side, in voxels: with an origin within [`MAX_ORIGIN`], every corner's
+/// distance from it is below 2^23, which `f32` holds exactly.
+const MAX_EXACT_SIDE: u32 = (1 << 23) - 65536;
+/// The smallest and largest side of a voxel, in meters.
+const MIN_UNIT: f32 = 1.0 / 65536.0;
+const MAX_UNIT: f32 = 1024.0;
+
 /// Directives of spritebox that meshbox does not read (#7).
 const SPRITEBOX_DIRECTIVES: &[&str] = &[
     "sprite",
@@ -639,7 +648,13 @@ impl<'a> Parser<'a, '_> {
                 format!("Unexpected `{}` after the model's size", extra.text),
             ));
         }
-        let size: [u32; 3] = size(size_token, self.limits.max_voxel_side, "5x5x4")?;
+        // Sides are bounded too so that, with any origin, every corner is a whole number
+        // that `f32` holds exactly, whatever the limits allow.
+        let size: [u32; 3] = size(
+            size_token,
+            self.limits.max_voxel_side.min(MAX_EXACT_SIDE),
+            "5x5x4",
+        )?;
         // The options are checked together and the first error in the text is the one
         // reported, whatever order they are written in.
         let palette = header.option("palette").ok_or_else(|| {
@@ -647,8 +662,39 @@ impl<'a> Parser<'a, '_> {
                 .end_error("Expected `palette=NAME`: the palette of the model's keys".to_owned())
         });
         let palette_name = palette.clone().and_then(|p| check_name(p).map(|_| p));
-        let origin = header.option("origin").map(vector).transpose();
-        let unit = header.option("unit").map(length).transpose();
+        // Bounded so that every position is finite and keeps 1/256 of a voxel of
+        // precision in `f32`.
+        let origin = header
+            .option("origin")
+            .map(|t| {
+                let v = vector(t)?;
+                if v.iter().any(|c| c.abs() > MAX_ORIGIN) {
+                    return Err(t.error(
+                        ErrorCode::InvalidArgument,
+                        format!(
+                            "An origin is within {MAX_ORIGIN} voxels of the model on each axis"
+                        ),
+                    ));
+                }
+                Ok(v)
+            })
+            .transpose();
+        let unit = header
+            .option("unit")
+            .map(|t| {
+                let u = length(t)?;
+                if !(MIN_UNIT..=MAX_UNIT).contains(&u) {
+                    return Err(t.error(
+                        ErrorCode::InvalidArgument,
+                        format!(
+                            "A voxel's side is 1/65536 to {MAX_UNIT} meters, not `{}`",
+                            t.text
+                        ),
+                    ));
+                }
+                Ok(u)
+            })
+            .transpose();
         let rest = header.finish("voxel model", "`palette=`, `origin=` or `unit=`");
         let first = first_error([
             palette_name.as_ref().err(),
@@ -869,6 +915,8 @@ impl<'a> Parser<'a, '_> {
                 continue;
             }
             let keys: Vec<char> = palette.keys.iter().map(|&(k, _)| k).collect();
+            let slots: HashMap<char, usize> =
+                keys.iter().enumerate().map(|(i, &k)| (k, i)).collect();
             let [w, d, _] = def.size;
             let mut cells = vec![0u16; def.size.iter().map(|&s| s as usize).product()];
             let mut ok = true;
@@ -878,7 +926,7 @@ impl<'a> Parser<'a, '_> {
                         if key == '.' {
                             continue;
                         }
-                        let Some(k) = keys.iter().position(|&c| c == key) else {
+                        let Some(&k) = slots.get(&key) else {
                             // Past the cap, the message is not even formatted.
                             if self.errors.keeps(Some(row.at(x))) {
                                 self.errors.push(Error::at(
