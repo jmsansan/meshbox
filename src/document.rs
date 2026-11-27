@@ -1,7 +1,8 @@
 use crate::mesh::Mesh;
 use crate::palette::{Palette, PaletteTexture};
+use crate::preview::{self, PreviewOptions};
 use crate::voxel::VoxelModel;
-use crate::{Error, ErrorCode, Limits, Result, gltf, mesher, png, text};
+use crate::{Error, ErrorCode, Image, Limits, Result, gltf, mesher, png, text};
 
 /// A parsed meshbox file: its palettes and its models.
 ///
@@ -119,6 +120,31 @@ impl Document {
             models.push((model.name.clone(), mesh));
         }
         Ok(Export { models, png })
+    }
+
+    /// The preview sheet of every model, within the default [`Limits`]: a row per
+    /// model with its name and size above four views (front, right, top and a 3/4
+    /// view from the front right).
+    pub fn preview(&self, options: &PreviewOptions) -> Result<Image> {
+        self.preview_with(options, &Limits::default())
+    }
+
+    /// The preview sheet of every model, within `limits`.
+    pub fn preview_with(&self, options: &PreviewOptions, limits: &Limits) -> Result<Image> {
+        let texture = self.palette_texture_with(limits)?;
+        let mut vertices = 0;
+        let mut meshes = Vec::with_capacity(self.models.len());
+        for model in &self.models {
+            let mesh = mesher::mesh(
+                model,
+                &self.palettes,
+                texture.as_ref(),
+                limits,
+                &mut vertices,
+            )?;
+            meshes.push((model, mesh));
+        }
+        preview::sheet(&meshes, &self.palettes, options, limits)
     }
 
     fn find(&self, name: &str) -> Result<&VoxelModel> {

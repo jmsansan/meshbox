@@ -65,5 +65,10 @@ fn main() -> Result<(), meshbox::Error> {
             std::fs::write(std::path::Path::new(dir).join(name), bytes)?;
         }
     }
+    if let Some(dir) = &out {
+        let preview = document.preview(&meshbox::PreviewOptions::default())?;
+        meshbox::png::write_file(std::path::Path::new(dir).join("preview.png"), &preview)?;
+        println!("preview.png: {}x{}", preview.width(), preview.height());
+    }
     Ok(())
 }
