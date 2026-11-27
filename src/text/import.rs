@@ -257,17 +257,17 @@ pub(crate) fn resolve(from: &str, name: &str) -> String {
             None => name.to_owned(),
         }
     };
-    // A drive, or the server of a network path (`//server/share`), is the first part,
-    // and `..` does not go above it.
+    // A drive, or the server and share of a network path (`//server/share`), come
+    // first, and `..` does not go above them.
     let unc = joined.starts_with("//") && !joined.starts_with("///");
-    let fixed = usize::from(drive(&joined) || unc);
-    let rooted = joined.starts_with('/') || fixed == 1;
+    let fixed = if unc { 2 } else { usize::from(drive(&joined)) };
+    let rooted = joined.starts_with('/') || fixed > 0;
     let mut parts: Vec<&str> = Vec::new();
     for part in joined.split('/') {
         match part {
             "" | "." => {}
-            // Nothing is above a root: `/`, a drive or a server.
-            ".." if rooted && parts.len() == fixed => {}
+            // Nothing is above a root: `/`, a drive or a server's share.
+            ".." if rooted && parts.len() <= fixed => {}
             ".." if parts.len() > fixed && parts.last().is_some_and(|p| *p != "..") => {
                 parts.pop();
             }
@@ -300,7 +300,7 @@ mod tests {
         assert_eq!(resolve("C:/shared/c", "d"), "C:/shared/d");
         assert_eq!(resolve("C:/c", "../../d"), "C:/d");
         assert_eq!(resolve("C:/w/s", "//server/art/p"), "//server/art/p");
-        assert_eq!(resolve("//server/art/p", "../../q"), "//server/q");
+        assert_eq!(resolve("//server/art/p", "../../q"), "//server/art/q");
         assert_eq!(resolve("/art/scene", "../../shared"), "/shared");
         assert_eq!(resolve("parts\\body", "palette"), "parts/palette");
         assert_eq!(resolve("", "parts\\body"), "parts/body");

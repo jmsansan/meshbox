@@ -644,3 +644,13 @@ fn check_takes_no_values() {
         "invalid_argument"
     );
 }
+
+#[test]
+fn review_cases_twelve() {
+    // An empty --out is not the working directory.
+    let output = meshbox(&["render", "scene.meshbox", "--out", ""]);
+    assert_eq!(status(&output), 2);
+    // Help after a value that looks like an option is still help.
+    let output = meshbox(&["render", "s.meshbox", "--model", "--model", "--help"]);
+    assert_eq!(status(&output), 0);
+}

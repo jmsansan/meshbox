@@ -17,7 +17,7 @@ fn main() -> ExitCode {
         Ok(args) => args,
         Err(_) => {
             let raw: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
-            let json = cli::wants_json(raw.iter().map(|a| a.to_str()));
+            let json = cli::has_flag(raw.iter().map(|a| a.to_str()), &["--json"]);
             return cli::usage_error("arguments must be valid Unicode", json);
         }
     };

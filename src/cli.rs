@@ -46,11 +46,8 @@ struct Options {
 }
 
 pub fn run(args: &[String]) -> ExitCode {
-    // `-h` asks for help, unless it is a model's name: `--model -h`.
-    let help = args
-        .iter()
-        .enumerate()
-        .any(|(i, a)| (a == "-h" || a == "--help") && (i == 0 || args[i - 1] != "--model"));
+    // `-h` asks for help, unless it is a value, as a model's name: `--model -h`.
+    let help = has_flag(args.iter().map(|a| Some(a.as_str())), &["-h", "--help"]);
     if args.is_empty() || help || args[0] == "help" {
         return if !say(USAGE) {
             ExitCode::from(EXIT_IO)
@@ -70,17 +67,20 @@ pub fn run(args: &[String]) -> ExitCode {
     let options = match parse_args(args) {
         Ok(options) => options,
         Err(message) => {
-            return usage_error(&message, wants_json(args.iter().map(|a| Some(a.as_str()))));
+            return usage_error(
+                &message,
+                has_flag(args.iter().map(|a| Some(a.as_str())), &["--json"]),
+            );
         }
     };
     execute(&options)
 }
 
-/// Whether `--json` is among `args` as the flag, the way the arguments are parsed:
+/// Whether one of `flags` is among `args` as a flag, the way the arguments are parsed:
 /// for `render`, `--model` takes any next argument, `--out` and `--scale` one that is
 /// not an option; other commands take no values. `None` is an argument that is not
 /// Unicode.
-pub fn wants_json<'a>(args: impl IntoIterator<Item = Option<&'a str>>) -> bool {
+pub fn has_flag<'a>(args: impl IntoIterator<Item = Option<&'a str>>, flags: &[&str]) -> bool {
     let mut args = args.into_iter().peekable();
     let render = args.peek() == Some(&Some("render"));
     while let Some(arg) = args.next() {
@@ -96,7 +96,7 @@ pub fn wants_json<'a>(args: impl IntoIterator<Item = Option<&'a str>>) -> bool {
                     args.next();
                 }
             }
-            Some("--json") => return true,
+            Some(flag) if flags.contains(&flag) => return true,
             _ => {}
         }
     }
@@ -138,7 +138,14 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
         };
         match arg.as_str() {
             "--json" => json = true,
-            "--out" if command == "render" => out = Some(PathBuf::from(value("--out")?)),
+            "--out" if command == "render" => {
+                let dir = value("--out")?;
+                // An empty directory, as an unset variable gives, is not the current one.
+                if dir.is_empty() {
+                    return Err("--out needs a directory, not an empty value".to_owned());
+                }
+                out = Some(PathBuf::from(dir));
+            }
             "--scale" if command == "render" => {
                 let text = value("--scale")?;
                 let n: u32 = text
