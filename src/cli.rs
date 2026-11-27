@@ -186,6 +186,17 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
     })
 }
 
+/// A directory as the start of import names: its name and one `/`, which a root
+/// such as `/` or `C:/` already ends with.
+fn dir_name(dir: &Path) -> String {
+    let name = import_name(dir);
+    if name.ends_with('/') {
+        name
+    } else {
+        format!("{name}/")
+    }
+}
+
 /// A full path as an import name: `/` between parts, and on Windows without the
 /// `\\?\` prefix that canonical paths have (`//server/share` for a network path).
 fn import_name(path: &Path) -> String {
@@ -231,7 +242,7 @@ fn shown(options: &Options, name: &str) -> String {
     let Ok(dir) = std::path::absolute(dir) else {
         return name.to_owned();
     };
-    let dir = format!("{}/", import_name(&dir));
+    let dir = dir_name(&dir);
     match name.strip_prefix(dir.as_str()) {
         Some(rest) => base.join(rest).display().to_string(),
         None => name.to_owned(),
@@ -255,7 +266,7 @@ fn shortened(options: &Options, message: &str) -> String {
     } else {
         format!("{}/", base.to_string_lossy().replace('\\', "/"))
     };
-    message.replace(&format!("`{}/", import_name(&dir)), &format!("`{prefix}"))
+    message.replace(&format!("`{}", dir_name(&dir)), &format!("`{prefix}"))
 }
 
 /// The directory that imports are read relative to.
@@ -327,7 +338,7 @@ fn execute(options: &Options) -> ExitCode {
     let root_name = if options.file == "-" {
         std::path::absolute(".")
             .ok()
-            .map(|dir| format!("{}/-", import_name(&dir)))
+            .map(|dir| format!("{}-", dir_name(&dir)))
             .unwrap_or_default()
     } else {
         std::path::absolute(&options.file)
