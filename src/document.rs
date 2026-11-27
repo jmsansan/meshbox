@@ -131,20 +131,8 @@ impl Document {
 
     /// The preview sheet of every model, within `limits`.
     pub fn preview_with(&self, options: &PreviewOptions, limits: &Limits) -> Result<Image> {
-        let texture = self.palette_texture_with(limits)?;
-        let mut vertices = 0;
-        let mut meshes = Vec::with_capacity(self.models.len());
-        for model in &self.models {
-            let mesh = mesher::mesh(
-                model,
-                &self.palettes,
-                texture.as_ref(),
-                limits,
-                &mut vertices,
-            )?;
-            meshes.push((model, mesh));
-        }
-        preview::sheet(&meshes, &self.palettes, options, limits)
+        let models: Vec<&VoxelModel> = self.models.iter().collect();
+        preview::sheet(&models, &self.palettes, options, limits)
     }
 
     fn find(&self, name: &str) -> Result<&VoxelModel> {

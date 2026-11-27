@@ -20,8 +20,6 @@ pub struct Mesh {
     /// Where the translucent triangles start in [`Mesh::indices`].
     pub translucent_start: usize,
     pub(crate) naive_triangles: u64,
-    /// For each quad (four vertices), its key's index in the palette plus one.
-    pub(crate) quad_keys: Vec<u16>,
 }
 
 /// The counts of a mesh.

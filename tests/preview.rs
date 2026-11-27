@@ -169,5 +169,81 @@ voxels pane 3x1x2 palette=p origin=0,0,0 unit=0.1
     assert_eq!(bytes, again);
     // A golden hash: the same on every platform.
     let hash = common::fnv(&bytes);
-    assert_eq!(hash, 0x343be5db4aa08990, "{hash:x}");
+    assert_eq!(hash, 0x7b5e0908d3099d5a, "{hash:x}");
+}
+
+/// The frame color behind the views.
+const FRAME: Color = Color::rgb(0x2a, 0x2e, 0x38);
+
+#[test]
+fn t_junctions_leave_no_cracks_in_the_3_4_view() {
+    // Greedy meshing splits this top surface into a long and two short rectangles.
+    let text = "palette p\n  r #ff0000\nvoxels m 2x5x1 palette=p origin=0,0,0\n  level 0\n    r.\n    r.\n    rr\n    rr\n    rr\n";
+    for scale in 1..=24 {
+        let image = preview(text, scale);
+        // The 3/4 view starts after three views of 2, 5 and 2 voxels and three gaps.
+        let left = 8 + (2 + 5 + 2) * scale + 3 * 8;
+        let is_frame = |x: u32, y: u32| image.pixel(x, y) == Some(FRAME);
+        for y in TOP + 2..image.height() - 2 {
+            for x in left + 2..image.width() - 2 {
+                if !is_frame(x, y) {
+                    continue;
+                }
+                // A frame pixel walled in by the model on all four sides is a crack.
+                let walled = |dx: i32, dy: i32| {
+                    (1..=2).any(|k| {
+                        let (px, py) = ((x as i32 + dx * k) as u32, (y as i32 + dy * k) as u32);
+                        !is_frame(px, py) && image.pixel(px, py).is_some_and(|c| c.r > c.g)
+                    })
+                };
+                assert!(
+                    !(walled(-1, 0) && walled(1, 0) && walled(0, -1) && walled(0, 1)),
+                    "a crack at ({x}, {y}) at scale {scale}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn the_grid_darkens_each_boundary_once() {
+    let text = "palette p\n  w #ffffff\nvoxels m 2x2x1 palette=p\n  level 0\n    ww\n    ww\n";
+    let doc = Document::parse(text).unwrap();
+    let image = doc
+        .preview(&PreviewOptions {
+            scale: 1,
+            grid: true,
+        })
+        .unwrap();
+    // At scale 1 every pixel of the 2 × 2 top view is on a boundary: all alike.
+    let left = 8 + 2 + 8 + 2 + 8;
+    let c = pixel(&image, left, TOP);
+    for (x, y) in [(1, 0), (0, 1), (1, 1)] {
+        assert_eq!(pixel(&image, left + x, TOP + y), c);
+    }
+}
+
+#[test]
+fn long_thin_faces_render_quickly() {
+    // Rods 256 voxels long, every other row on every other level.
+    let mut text = String::from("palette p\n  a #808080\nvoxels m 256x32x32 palette=p\n");
+    let full = "a".repeat(256);
+    let empty = ".".repeat(256);
+    for y in (0..32).step_by(2) {
+        text.push_str(&format!("  level {y}\n"));
+        for z in 0..32 {
+            text.push_str(&format!(
+                "    {}\n",
+                if z % 2 == 0 { &full } else { &empty }
+            ));
+        }
+    }
+    let doc = Document::parse(&text).unwrap();
+    let start = std::time::Instant::now();
+    doc.preview(&PreviewOptions::default()).unwrap();
+    assert!(
+        start.elapsed() < std::time::Duration::from_secs(60),
+        "{:?}",
+        start.elapsed()
+    );
 }

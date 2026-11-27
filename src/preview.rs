@@ -1,9 +1,14 @@
 //! Preview sheets: each model from the front, the right, the top and a 3/4 view, so
 //! that an author, or an assistant, can look at what the text makes and correct it.
+//!
+//! The views are drawn from the model's rectangles in voxel units, projected with
+//! integer matrices: every corner lands on an exact subpixel position, so faces that
+//! meet, at a T-junction too, leave no crack, and the model's origin and unit do not
+//! change a pixel.
 
-use crate::mesh::Mesh;
+use crate::mesher::{Quad, quads};
 use crate::palette::Palette;
-use crate::raster::{Canvas, Mode, SUBPIXEL, Vertex, blend};
+use crate::raster::{Canvas, SUBPIXEL, Vertex, blend};
 use crate::voxel::VoxelModel;
 use crate::{Color, Error, ErrorCode, Image, Limits, Result, label_font};
 
@@ -51,152 +56,149 @@ enum View {
 
 const VIEWS: [View; 4] = [View::Front, View::Right, View::Top, View::Iso];
 
-/// The isometric camera's right, up and toward-the-viewer directions, fixed
-/// constants so that no platform math function is involved.
-const ISO_RIGHT: [f32; 3] = [0.707_106_77, 0.0, -0.707_106_77];
-const ISO_UP: [f32; 3] = [-0.408_248_28, 0.816_496_6, -0.408_248_28];
-const ISO_TOWARD: [f32; 3] = [0.577_350_26, 0.577_350_26, 0.577_350_26];
+/// The isometric camera's right and up directions, `(√2/2, 0, -√2/2)` and
+/// `(-√6/6, √6/3, -√6/6)`, as constants: no platform math function is involved.
+const ISO_RIGHT: f32 = 0.707_106_77;
+const ISO_UP_SIDE: f32 = 0.408_248_28;
+const ISO_UP: f32 = 0.816_496_6;
 /// The light's direction, toward the light: from above, the front and the right, so
 /// that the top is brightest and the front and right sides differ.
 const LIGHT: [f32; 3] = [0.399_501, 0.799_002, 0.449_439];
 const AMBIENT: f32 = 0.45;
 const DIFFUSE: f32 = 0.55;
 
-fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-impl View {
-    /// `(x right, y down, depth toward the viewer)` of a point, in meters.
-    fn project(self, p: [f32; 3]) -> [f32; 3] {
-        match self {
-            View::Front => [p[0], -p[1], p[2]],
-            View::Right => [-p[2], -p[1], p[0]],
-            View::Top => [p[0], p[2], p[1]],
-            View::Iso => [dot(p, ISO_RIGHT), -dot(p, ISO_UP), dot(p, ISO_TOWARD)],
-        }
-    }
-    fn toward(self) -> [f32; 3] {
-        match self {
-            View::Front => [0.0, 0.0, 1.0],
-            View::Right => [1.0, 0.0, 0.0],
-            View::Top => [0.0, 1.0, 0.0],
-            View::Iso => ISO_TOWARD,
-        }
-    }
-}
-
-/// One view laid out: its size, and how meters map to its pixels.
+/// One view laid out: an integer projection of voxel coordinates to subpixels.
 struct Frame {
     view: View,
     width: u32,
     height: u32,
-    /// The projected box's smallest x and y, in meters.
-    min: [f32; 2],
-    /// Pixels per meter.
-    ppm: f32,
+    /// Subpixels per voxel along the projection's directions.
+    step: [i64; 3],
+    /// What is subtracted so that the model's box starts at (0, 0).
+    offset: [i64; 2],
 }
 
 impl Frame {
     fn new(view: View, model: &VoxelModel, scale: u32) -> Frame {
-        let [w, d, h] = model.size;
-        let corner = |x: u32, y: u32, z: u32| {
-            crate::mesher::position([x as i32, y as i32, z as i32], model.origin, model.unit)
+        let s = scale as i64 * SUBPIXEL;
+        // The isometric view is a quarter larger; its steps are rounded once, to
+        // whole subpixels, so that every voxel corner projects exactly.
+        let iso = |f: f32| (f * scale as f32 * 1.25 * SUBPIXEL as f32).round() as i64;
+        let step = match view {
+            View::Iso => [iso(ISO_RIGHT), iso(ISO_UP_SIDE), iso(ISO_UP)],
+            _ => [s, s, s],
         };
-        let corners = [
-            corner(0, 0, 0),
-            corner(w, 0, 0),
-            corner(0, h, 0),
-            corner(w, h, 0),
-            corner(0, 0, d),
-            corner(w, 0, d),
-            corner(0, h, d),
-            corner(w, h, d),
-        ];
-        let projected = corners.map(|c| view.project(c));
-        let fold = |i: usize, f: fn(f32, f32) -> f32| {
-            projected.iter().map(|p| p[i]).fold(projected[0][i], f)
-        };
-        let (min_x, max_x) = (fold(0, f32::min), fold(0, f32::max));
-        let (min_y, max_y) = (fold(1, f32::min), fold(1, f32::max));
-        let pixels_per_voxel = match view {
-            View::Iso => scale as f32 * 1.25,
-            _ => scale as f32,
-        };
-        let ppm = pixels_per_voxel / model.unit;
-        // A hair less than the exact size, so that rounding in meters does not add a
-        // pixel to the axis views, whose sizes are whole voxels.
-        let side = |span: f32| ((span * ppm - 0.001).ceil() as u32).max(1);
-        Frame {
+        let mut frame = Frame {
             view,
-            width: side(max_x - min_x),
-            height: side(max_y - min_y),
-            min: [min_x, min_y],
-            ppm,
+            width: 1,
+            height: 1,
+            step,
+            offset: [0, 0],
+        };
+        let [w, d, h] = model.size.map(|v| v as i32);
+        let corners = [
+            [0, 0, 0],
+            [w, 0, 0],
+            [0, h, 0],
+            [w, h, 0],
+            [0, 0, d],
+            [w, 0, d],
+            [0, h, d],
+            [w, h, d],
+        ]
+        .map(|c| frame.project(c));
+        let min = |i: usize| corners.iter().map(|c| c[i]).min().unwrap_or(0);
+        let max = |i: usize| corners.iter().map(|c| c[i]).max().unwrap_or(0);
+        frame.offset = [min(0), min(1)];
+        let side = |span: i64| {
+            let pixels = span.div_euclid(SUBPIXEL) + i64::from(span % SUBPIXEL != 0);
+            pixels.clamp(1, u32::MAX as i64) as u32
+        };
+        frame.width = side(max(0) - min(0));
+        frame.height = side(max(1) - min(1));
+        frame
+    }
+
+    /// `(x right, y down, depth toward the viewer)` of a voxel corner, before the
+    /// offset: exact integers.
+    fn project(&self, c: [i32; 3]) -> Vertex {
+        let [x, y, z] = c.map(i64::from);
+        let [a, b, e] = self.step;
+        match self.view {
+            View::Front => [x * a, -y * a, z],
+            View::Right => [-z * a, -y * a, x],
+            View::Top => [x * a, z * a, y],
+            View::Iso => [(x - z) * a, (x + z) * b - y * e, x + y + z],
         }
     }
 
-    fn vertex(&self, p: [f32; 3]) -> Vertex {
-        let s = self.view.project(p);
-        let fixed = |v: f32| (v * self.ppm * SUBPIXEL).round() as i64;
-        [
-            fixed(s[0] - self.min[0]),
-            fixed(s[1] - self.min[1]),
-            fixed(s[2]),
-        ]
+    fn vertex(&self, c: [i32; 3]) -> Vertex {
+        let p = self.project(c);
+        [p[0] - self.offset[0], p[1] - self.offset[1], p[2]]
+    }
+
+    /// Whether a face whose normal is `axis`, `positive` or not, faces the camera.
+    fn faces(&self, axis: usize, positive: bool) -> bool {
+        match self.view {
+            View::Front => axis == 2 && positive,
+            View::Right => axis == 0 && positive,
+            View::Top => axis == 1 && positive,
+            View::Iso => positive,
+        }
     }
 }
 
-/// The color of a face with `normal`, lit.
-fn shade(color: Color, normal: [f32; 3]) -> Color {
-    let light = AMBIENT + DIFFUSE * dot(normal, LIGHT).max(0.0);
+/// The color of a face whose normal is `axis`, `positive` or not, lit.
+fn shade(color: Color, axis: usize, positive: bool) -> Color {
+    let n = if positive { 1.0 } else { -1.0 };
+    let light = AMBIENT + DIFFUSE * (LIGHT[axis] * n).max(0.0);
     let factor = (light * 256.0).round() as u32;
     let lit = |c: u8| ((c as u32 * factor + 128) >> 8).min(255) as u8;
     Color::rgba(lit(color.r), lit(color.g), lit(color.b), color.a)
 }
 
-/// Draws one view of `mesh` into a new image.
-fn render(frame: &Frame, mesh: &Mesh, palette: &Palette, limits: &Limits) -> Result<Image> {
+/// Draws one view of a model's rectangles into a new image.
+fn render(
+    frame: &Frame,
+    opaque: &[Quad],
+    clear: &[Quad],
+    palette: &Palette,
+    limits: &Limits,
+) -> Result<Image> {
     let mut image = Image::new_with(frame.width, frame.height, limits)?;
     image.fill_rect(0, 0, frame.width, frame.height, FRAME);
     let mut canvas = Canvas::new(image);
-    let toward = frame.view.toward();
-    let triangle = |t: &[u32]| -> Option<([Vertex; 3], Color)> {
-        let first = t[0] as usize;
-        let normal = mesh.normals[first];
-        // Faces turned away from the camera are hidden by those that face it.
-        if dot(normal, toward) <= 0.0 {
-            return None;
-        }
-        let v = [0, 1, 2].map(|k| frame.vertex(mesh.positions[t[k] as usize]));
-        let key = mesh.quad_keys[first / 4] as usize;
-        let color = palette
+    let color = |q: &Quad| {
+        let c = palette
             .keys
-            .get(key.wrapping_sub(1))
+            .get(q.cell as usize - 1)
             .map_or(Color::TRANSPARENT, |&(_, c)| c);
-        Some((v, shade(color, normal)))
+        shade(c, q.axis, q.positive)
     };
-    for t in mesh.opaque_indices().chunks_exact(3) {
-        if let Some((v, color)) = triangle(t) {
-            canvas.triangle(v, color, Mode::Opaque);
+    let triangles = |q: &Quad| {
+        let v = q.corners.map(|c| frame.vertex(c));
+        [[v[0], v[1], v[2]], [v[0], v[2], v[3]]]
+    };
+    for q in opaque.iter().filter(|q| frame.faces(q.axis, q.positive)) {
+        for t in triangles(q) {
+            canvas.opaque(t, color(q));
         }
     }
-    // Translucent faces after the opaque ones, the farthest first.
-    let mut clear: Vec<([Vertex; 3], Color)> = mesh
-        .translucent_indices()
-        .chunks_exact(3)
-        .filter_map(triangle)
-        .collect();
-    clear.sort_by_key(|(v, _)| v[0][2] + v[1][2] + v[2][2]);
-    for (v, color) in clear {
-        canvas.triangle(v, color, Mode::Blend);
+    // Translucent faces after the opaque ones, blended at each pixel from the
+    // farthest to the nearest.
+    let mut fragments = Vec::new();
+    for q in clear.iter().filter(|q| frame.faces(q.axis, q.positive)) {
+        for t in triangles(q) {
+            canvas.fragments(t, color(q), &mut fragments);
+        }
     }
+    canvas.blend_fragments(fragments);
     Ok(canvas.image)
 }
 
 /// The preview sheet of `models`: a row per model, its name above four views.
 pub(crate) fn sheet(
-    models: &[(&VoxelModel, Mesh)],
+    models: &[&VoxelModel],
     palettes: &[Palette],
     options: &PreviewOptions,
     limits: &Limits,
@@ -208,41 +210,52 @@ pub(crate) fn sheet(
         ));
     }
     let mut rows = Vec::new();
-    let (mut width, mut height) = (MARGIN, MARGIN);
-    for (model, mesh) in models {
+    let (mut width, mut height) = (2 * MARGIN, MARGIN);
+    for &model in models {
         let frames = VIEWS.map(|v| Frame::new(v, model, options.scale));
-        let label = format!(
-            "{} {}x{}x{}",
-            model.name, model.size[0], model.size[1], model.size[2]
-        );
-        let row_width = frames.iter().map(|f| f.width).sum::<u32>() + GAP * 3;
-        let row_width = row_width.max(label_font::width(&label));
-        let row_height =
-            label_font::HEIGHT + LABEL_GAP + frames.iter().map(|f| f.height).max().unwrap_or(1);
         // Each view is within the image limits before anything is drawn.
         for f in &frames {
             limits.check_image(f.width, f.height)?;
         }
-        width = width.max(MARGIN + row_width.min(u32::MAX - 2 * MARGIN) + MARGIN);
+        let label = format!(
+            "{} {}x{}x{}",
+            model.name, model.size[0], model.size[1], model.size[2]
+        );
+        let views_width = frames
+            .iter()
+            .fold(GAP * 3, |sum, f| sum.saturating_add(f.width));
+        let row_width = views_width.max(label_font::width(&label));
+        let row_height =
+            label_font::HEIGHT + LABEL_GAP + frames.iter().map(|f| f.height).max().unwrap_or(1);
+        width = width.max(row_width.saturating_add(2 * MARGIN));
         height = height.saturating_add(row_height + ROW_GAP);
-        rows.push((model, mesh, frames, label, row_height));
+        rows.push((model, frames, label, row_height));
     }
     let height = if rows.is_empty() {
         2 * MARGIN
     } else {
         height - ROW_GAP + MARGIN
     };
-    let width = width.max(2 * MARGIN);
     let mut sheet = Image::new_with(width, height, limits)?;
     sheet.fill_rect(0, 0, width, height, BACKGROUND);
     let mut y = MARGIN;
-    for (model, mesh, frames, label, row_height) in rows {
+    for (model, frames, label, row_height) in rows {
         label_font::draw(&mut sheet, MARGIN, y, &label, LABEL);
         let palette = &palettes[model.palette];
+        let (opaque, clear, _) =
+            quads(model, palette, limits.max_triangles / 2).ok_or_else(|| {
+                Error::new(
+                    ErrorCode::LimitExceeded,
+                    format!(
+                        "Model `{}` meshes to more triangles than the limit of {}",
+                        model.name, limits.max_triangles
+                    ),
+                )
+            })?;
         let mut x = MARGIN;
         let top = y + label_font::HEIGHT + LABEL_GAP;
         for frame in &frames {
-            let mut view = render(frame, mesh, palette, limits)?;
+            let mut view = render(frame, &opaque, &clear, palette, limits)?;
             if frame.view == View::Top && options.grid {
                 grid(&mut view, model, options.scale);
             }
@@ -254,26 +267,22 @@ pub(crate) fn sheet(
     Ok(sheet)
 }
 
-/// Darkens the pixels on voxel boundaries of a top view.
+/// Darkens the pixels on voxel boundaries of a top view, each pixel once.
 fn grid(view: &mut Image, model: &VoxelModel, scale: u32) {
     let [w, d, _] = model.size;
-    let line = |view: &mut Image, x: u32, y: u32| {
-        if let Some(under) = view.pixel(x, y) {
-            view.set_pixel(x, y, blend(under, GRID));
-        }
+    let lines = |n: u32, size: u32| -> Vec<u32> {
+        let mut lines: Vec<u32> = (0..=n).map(|i| (i * scale).min(size - 1)).collect();
+        lines.dedup();
+        lines
     };
-    for i in 0..=w {
-        let x = (i * scale).min(view.width() - 1);
-        for y in 0..view.height() {
-            line(view, x, y);
-        }
-    }
-    for j in 0..=d {
-        let y = (j * scale).min(view.height() - 1);
+    let columns = lines(w, view.width());
+    let rows = lines(d, view.height());
+    for y in 0..view.height() {
         for x in 0..view.width() {
-            // Crossings are darkened once.
-            if x % scale != 0 && x != view.width() - 1 {
-                line(view, x, y);
+            if columns.binary_search(&x).is_ok() || rows.binary_search(&y).is_ok() {
+                if let Some(under) = view.pixel(x, y) {
+                    view.set_pixel(x, y, blend(under, GRID));
+                }
             }
         }
     }

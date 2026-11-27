@@ -204,7 +204,6 @@ pub(crate) fn mesh(
         indices: Vec::with_capacity(n * 6),
         translucent_start: opaque.len() * 6,
         naive_triangles: faces * 2,
-        quad_keys: Vec::with_capacity(n),
     };
     // Each key's UV, looked up once.
     let uvs: Vec<[f32; 2]> = model
@@ -218,7 +217,6 @@ pub(crate) fn mesh(
         .collect();
     for quad in opaque.iter().chain(&clear) {
         let uv = uvs[quad.cell as usize - 1];
-        mesh.quad_keys.push(quad.cell);
         let mut normal = [0.0f32; 3];
         normal[quad.axis] = if quad.positive { 1.0 } else { -1.0 };
         let base = mesh.positions.len() as u32;
