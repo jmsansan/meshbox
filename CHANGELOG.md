@@ -37,9 +37,12 @@ The first release: voxel models from text to glTF and a preview sheet.
 - Imports: `import NAME` (or `import "NAME"`) brings in another file's definitions,
   read through the caller's loader with `Document::parse_with_loader` and
   `check_with_loader`, or `Document::parse_file_with_loader` and
-  `check_file_with_loader` for text with a name of its own; nothing touches the file system unless the loader does. Names
-  resolve against the importing file's directory; cycles are `cycle`, depth past
+  `check_file_with_loader` for text with a name of its own; nothing touches the file
+  system unless the loader does. Names resolve against the importing file's
+  directory, the same on every platform; cycles are `cycle`, depth past
   `max_nesting` is `limit_exceeded`, and an error in an imported file names it.
+  `Document::export_models_with` and `preview_models_with` take a subset of the
+  models.
 - The `meshbox` command: `check <file> [--json]` and
   `render <file> --out <dir> [--scale <n>] [--model <name>] [--json]`, which writes
   `model-NAME.glb` per model, `palette.png`, `preview.png` and `meshbox.json`, and
