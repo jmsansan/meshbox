@@ -200,7 +200,19 @@ fn dir_name(dir: &Path) -> String {
 /// A full path as an import name: `/` between parts, and on Windows without the
 /// `\\?\` prefix that canonical paths have (`//server/share` for a network path).
 fn import_name(path: &Path) -> String {
+    // On Windows `//` starts a network path; elsewhere it is `/`, as `/` is to the
+    // import names that follow.
     let text = path.to_string_lossy().replace('\\', "/");
+    let text = if cfg!(windows) {
+        text
+    } else {
+        let trimmed = text.trim_start_matches('/');
+        if trimmed.len() < text.len() {
+            format!("/{trimmed}")
+        } else {
+            text
+        }
+    };
     let text = if let Some(unc) = text.strip_prefix("//?/UNC/") {
         format!("//{unc}")
     } else if let Some(local) = text.strip_prefix("//?/") {
