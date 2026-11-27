@@ -1,10 +1,15 @@
 //! `import NAME`: definitions of other files, loaded through the caller's loader.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::lex;
 use crate::error::Errors;
 use crate::{Error, ErrorCode, Limits, Result};
+
+/// The longest name an import may resolve to.
+const MAX_NAME_BYTES: usize = 1024;
+/// The deepest imports go, whatever `max_nesting` says: loading recurses.
+const MAX_DEPTH: usize = 256;
 
 /// Loads the text of a file by the name an `import` resolves to.
 pub(crate) type Loader<'l> = dyn FnMut(&str) -> Result<String> + 'l;
@@ -16,6 +21,10 @@ pub(crate) struct Files {
     pub texts: Vec<String>,
     /// The file that the `import` on `(file, line)` loads.
     pub targets: HashMap<(u32, usize), u32>,
+    /// Each loaded file by name.
+    index: HashMap<String, u32>,
+    /// Names that could not be loaded: imported again, they are not read again.
+    failed: HashSet<String>,
 }
 
 impl Files {
@@ -30,6 +39,8 @@ impl Files {
             names: vec![String::new()],
             texts: vec![root.to_owned()],
             targets: HashMap::new(),
+            index: HashMap::from([(String::new(), 0)]),
+            failed: HashSet::new(),
         };
         let mut loading = Loading {
             limits,
@@ -81,8 +92,17 @@ impl Files {
                 .unwrap_or(name_token.text);
             let name = resolve(&self.names[file as usize], written);
             let line = name_token.pos.line;
-            if let Some(i) = self.names.iter().position(|n| *n == name) {
-                let i = i as u32;
+            if name.len() > MAX_NAME_BYTES {
+                loading.errors.push(name_token.error(
+                    ErrorCode::LimitExceeded,
+                    format!("An imported file's name is at most {MAX_NAME_BYTES} bytes"),
+                ));
+                continue;
+            }
+            if self.failed.contains(&name) {
+                continue;
+            }
+            if let Some(&i) = self.index.get(&name) {
                 if stack.contains(&i) {
                     loading.errors.push(name_token.error(
                         ErrorCode::Cycle,
@@ -96,7 +116,7 @@ impl Files {
                 }
                 continue;
             }
-            if stack.len() > loading.limits.max_nesting {
+            if stack.len() > loading.limits.max_nesting.min(MAX_DEPTH) {
                 loading.errors.push(name_token.error(
                     ErrorCode::LimitExceeded,
                     format!(
@@ -117,8 +137,7 @@ impl Files {
             };
             match loader(&name) {
                 Ok(text) => {
-                    loading.total += text.len();
-                    if loading.total > loading.limits.max_text_bytes {
+                    if loading.total.saturating_add(text.len()) > loading.limits.max_text_bytes {
                         loading.errors.push(name_token.error(
                             ErrorCode::LimitExceeded,
                             format!(
@@ -126,9 +145,12 @@ impl Files {
                                 loading.limits.max_text_bytes
                             ),
                         ));
+                        self.failed.insert(name);
                         continue;
                     }
+                    loading.total += text.len();
                     let i = self.names.len() as u32;
+                    self.index.insert(name.clone(), i);
                     self.names.push(name);
                     self.texts.push(text);
                     self.targets.insert((file, line), i);
@@ -136,9 +158,12 @@ impl Files {
                     self.visit(i, stack, loading);
                     stack.pop();
                 }
-                Err(e) => loading.errors.push(
-                    name_token.error(e.code, format!("Cannot import `{name}`: {}", e.message)),
-                ),
+                Err(e) => {
+                    loading.errors.push(
+                        name_token.error(e.code, format!("Cannot import `{name}`: {}", e.message)),
+                    );
+                    self.failed.insert(name);
+                }
             }
         }
     }

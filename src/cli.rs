@@ -1,5 +1,6 @@
 //! The command line: parsing arguments, reading files, writing outputs and reporting.
 
+use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
@@ -46,16 +47,21 @@ struct Options {
 
 pub fn run(args: &[String]) -> ExitCode {
     if args.is_empty() || args.iter().any(|a| a == "-h" || a == "--help") || args[0] == "help" {
-        println!("{USAGE}");
+        let printed = say(USAGE);
         return if args.is_empty() {
             ExitCode::from(EXIT_USAGE)
-        } else {
+        } else if printed {
             ExitCode::SUCCESS
+        } else {
+            ExitCode::from(EXIT_IO)
         };
     }
-    if args.iter().any(|a| a == "-V" || a == "--version") {
-        println!("meshbox {}", env!("CARGO_PKG_VERSION"));
-        return ExitCode::SUCCESS;
+    if args.len() == 1 && (args[0] == "-V" || args[0] == "--version") {
+        return if say(&format!("meshbox {}", env!("CARGO_PKG_VERSION"))) {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::from(EXIT_IO)
+        };
     }
     let options = match parse_args(args) {
         Ok(options) => options,
@@ -133,36 +139,79 @@ fn base_dir(options: &Options) -> PathBuf {
         .unwrap_or_default()
 }
 
+/// Text from bytes, or a `syntax` error at the first byte that is not UTF-8.
+fn utf8(bytes: Vec<u8>) -> meshbox::Result<String> {
+    String::from_utf8(bytes).map_err(|e| {
+        let bytes = e.as_bytes();
+        let at = e.utf8_error().valid_up_to();
+        let before = String::from_utf8_lossy(&bytes[..at]);
+        let line = before.matches('\n').count() + 1;
+        let column = before.rsplit('\n').next().map_or(0, |l| l.chars().count()) + 1;
+        Error::at(
+            meshbox::Position::new(line, column),
+            ErrorCode::Syntax,
+            "The text is not UTF-8",
+        )
+    })
+}
+
 fn execute(options: &Options) -> ExitCode {
-    let text = if options.file == "-" {
-        let mut text = String::new();
-        match std::io::stdin().read_to_string(&mut text) {
-            Ok(_) => Ok(text),
-            Err(e) => Err(e),
-        }
+    let bytes = if options.file == "-" {
+        let mut bytes = Vec::new();
+        std::io::stdin().read_to_end(&mut bytes).map(|_| bytes)
     } else {
-        std::fs::read_to_string(&options.file)
+        std::fs::read(&options.file)
     };
-    let text = match text {
-        Ok(text) => text,
+    let text = match bytes {
+        Ok(bytes) => match utf8(bytes) {
+            Ok(text) => text,
+            Err(error) => return report(options, &[error], &[], EXIT_INVALID),
+        },
         Err(e) => {
             let error = Error::new(ErrorCode::Io, format!("cannot read {}: {e}", options.file));
             return report(options, &[error], &[], EXIT_IO);
         }
     };
     let base = base_dir(options);
+    // Each file is read once and kept, so that every pass of a run sees the same text.
+    let mut cache: HashMap<String, meshbox::Result<String>> = HashMap::new();
+    // A named file is parsed as an import of itself, so that a file importing itself is
+    // a cycle and its diagnostics name it.
+    let name = Path::new(&options.file)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .filter(|n| {
+            options.file != "-" && !n.contains(['"', ';']) && !n.chars().any(char::is_whitespace)
+        })
+        .map(str::to_owned);
+    let root = match &name {
+        Some(name) => {
+            cache.insert(name.clone(), Ok(text));
+            format!("import \"{name}\"\n")
+        }
+        None => text,
+    };
     let mut loader = |name: &str| -> meshbox::Result<String> {
-        let path = base.join(name);
-        std::fs::read_to_string(&path)
-            .map_err(|e| Error::new(ErrorCode::Io, format!("{}: {e}", path.display())))
+        cache
+            .entry(name.to_owned())
+            .or_insert_with(|| {
+                let path = base.join(name);
+                std::fs::read(&path)
+                    .map_err(|e| Error::new(ErrorCode::Io, format!("{}: {e}", path.display())))
+                    .and_then(utf8)
+            })
+            .clone()
     };
     let limits = Limits::default();
-    let document = match Document::parse_with_loader(&text, &limits, &mut loader) {
+    let document = match Document::parse_with_loader(&root, &limits, &mut loader) {
         Ok(document) => document,
-        Err(_) => {
-            // All the errors, not only the first.
-            let errors = meshbox::check_with_loader(&text, &limits, &mut loader);
-            let status = if errors.iter().all(|e| e.code == ErrorCode::Io) {
+        Err(first) => {
+            // All the errors, not only the first; the files are the ones already read.
+            let mut errors = meshbox::check_with_loader(&root, &limits, &mut loader);
+            if errors.is_empty() {
+                errors.push(first);
+            }
+            let status = if errors.iter().any(|e| e.code == ErrorCode::Io) {
                 EXIT_IO
             } else {
                 EXIT_INVALID
@@ -199,26 +248,36 @@ fn render(
         }
         None => document.models().iter().map(|m| m.name()).collect(),
     };
+    // On a file system that ignores case, two such names would write one file.
+    let mut seen: HashMap<String, &str> = HashMap::new();
+    for &name in &names {
+        if let Some(other) = seen.insert(name.to_ascii_lowercase(), name) {
+            return Err(invalid(Error::new(
+                ErrorCode::DuplicateName,
+                format!(
+                    "Models `{other}` and `{name}` would write files whose names differ only in case"
+                ),
+            )));
+        }
+    }
+    // One export: the vertex limit counts every model, and the texture is made once.
+    let export = document.export_with(limits).map_err(invalid)?;
     let mut files: Vec<(String, Vec<u8>)> = Vec::new();
     let mut models_json = Vec::new();
-    for &name in &names {
-        let mesh = document.mesh_with(name, limits).map_err(invalid)?;
-        let glb = document.glb_with(name, limits).map_err(invalid)?;
+    for (name, mesh) in export.meshes().filter(|(n, _)| names.contains(n)) {
+        let glb = export.glb(name).map_err(invalid)?;
         let file = format!("model-{name}.glb");
-        let model = document.model(name).ok_or_else(|| {
-            invalid(Error::new(
-                ErrorCode::UnknownName,
-                format!("Unknown model `{name}`"),
-            ))
-        })?;
-        models_json.push(model_json(model, &file, &mesh));
+        if let Some(model) = document.model(name) {
+            models_json.push(model_json(model, &file, mesh));
+        }
         files.push((file, glb));
     }
-    let texture = document.palette_texture_with(limits).map_err(invalid)?;
-    let has_texture = texture.is_some();
-    if let Some(texture) = texture {
-        files.push(("palette.png".to_owned(), png::encode(texture.image())));
-    }
+    let palette = match export.palette_png() {
+        Some(png) => png.to_vec(),
+        // A document without colors still gets the file, one transparent texel.
+        None => png::encode(&meshbox::Image::new(1, 1).map_err(invalid)?),
+    };
+    files.push(("palette.png".to_owned(), palette));
     let preview_options = PreviewOptions {
         scale: options.scale,
         grid: true,
@@ -233,9 +292,7 @@ fn render(
         "  \"generator\": \"meshbox {}\",",
         env!("CARGO_PKG_VERSION")
     );
-    if has_texture {
-        json.push_str("  \"palette\": \"palette.png\",\n");
-    }
+    json.push_str("  \"palette\": \"palette.png\",\n");
     json.push_str("  \"preview\": \"preview.png\",\n  \"models\": [");
     json.push_str(&models_json.join(","));
     if !models_json.is_empty() {
@@ -297,6 +354,7 @@ fn model_json(model: &meshbox::VoxelModel, file: &str, mesh: &meshbox::Mesh) -> 
 
 /// Prints errors and written files, and returns `status`.
 fn report(options: &Options, errors: &[Error], written: &[PathBuf], status: u8) -> ExitCode {
+    let mut printed = true;
     let file = if options.file == "-" {
         "<stdin>"
     } else {
@@ -345,7 +403,7 @@ fn report(options: &Options, errors: &[Error], written: &[PathBuf], status: u8) 
             json.push_str(&quote(&path.display().to_string()));
         }
         json.push_str("]}");
-        println!("{json}");
+        printed &= say(&json);
     } else {
         for e in errors {
             match e.position {
@@ -361,16 +419,21 @@ fn report(options: &Options, errors: &[Error], written: &[PathBuf], status: u8) 
             }
         }
         for path in written {
-            println!("wrote {}", path.display());
+            printed &= say(&format!("wrote {}", path.display()));
         }
         if !errors.is_empty() {
             let n = errors.len();
             eprintln!("{file}: {n} error{}", if n == 1 { "" } else { "s" });
         } else if options.command == "check" {
-            println!("{file}: ok");
+            printed &= say(&format!("{file}: ok"));
         }
     }
-    ExitCode::from(status)
+    // Output that cannot be written is an I/O error.
+    if printed {
+        ExitCode::from(status)
+    } else {
+        ExitCode::from(EXIT_IO)
+    }
 }
 
 /// A JSON string literal.
@@ -392,4 +455,12 @@ fn quote(text: &str) -> String {
     }
     out.push('"');
     out
+}
+
+/// Prints a line on standard output; false when it cannot be written, as to a full
+/// disk or a closed pipe.
+fn say(text: &str) -> bool {
+    use std::io::Write as _;
+    let mut out = std::io::stdout().lock();
+    writeln!(out, "{text}").and_then(|_| out.flush()).is_ok()
 }

@@ -261,3 +261,67 @@ fn standard_input_and_imports() {
     let doc = json::parse(String::from_utf8(output.stdout).unwrap().trim());
     assert_eq!(doc.get("file").str(), "<stdin>");
 }
+
+#[test]
+fn review_cases() {
+    let d = dir("review");
+    // A file that imports itself is a cycle, not a duplicate of itself.
+    let selfish = d.join("art.meshbox");
+    std::fs::write(&selfish, "import art.meshbox\npalette p\n  a #ffffff\n").unwrap();
+    let output = meshbox(&["check", selfish.to_str().unwrap(), "--json"]);
+    assert_eq!(status(&output), 1);
+    let doc = json::parse(String::from_utf8(output.stdout).unwrap().trim());
+    assert_eq!(doc.get("diagnostics").len(), 1);
+    assert_eq!(doc.get("diagnostics").at(0).get("code").str(), "cycle");
+    // Text that is not UTF-8 is an error in the file, with its position.
+    let bad = d.join("bad.meshbox");
+    std::fs::write(&bad, b"palette p\n  a #ff\xff\n").unwrap();
+    let output = meshbox(&["check", bad.to_str().unwrap()]);
+    assert_eq!(status(&output), 1);
+    assert!(String::from_utf8_lossy(&output.stderr).contains(":2:8: error[syntax]"));
+    // A missing import is an I/O error, whatever else follows from it.
+    let missing = d.join("missing.meshbox");
+    std::fs::write(
+        &missing,
+        "import nowhere.meshbox\nvoxels m 1x1x1 palette=p\n",
+    )
+    .unwrap();
+    assert_eq!(status(&meshbox(&["check", missing.to_str().unwrap()])), 3);
+    // --version does not hide bad usage.
+    assert_eq!(status(&meshbox(&["nonsense", "--version"])), 2);
+    // An empty document still gets every listed file.
+    let empty = d.join("empty.meshbox");
+    std::fs::write(&empty, "; nothing yet\n").unwrap();
+    let out = d.join("empty-out");
+    assert_eq!(
+        status(&meshbox(&[
+            "render",
+            empty.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap()
+        ])),
+        0
+    );
+    assert_eq!(
+        listing(&out),
+        ["meshbox.json", "palette.png", "preview.png"]
+    );
+    // Names that differ only in case would write one file on some systems.
+    let cases = d.join("cases.meshbox");
+    std::fs::write(
+        &cases,
+        "palette p\n  a #ffffff\nvoxels Cube 1x1x1 palette=p\nvoxels cube 1x1x1 palette=p\n",
+    )
+    .unwrap();
+    let out = d.join("cases-out");
+    assert_eq!(
+        status(&meshbox(&[
+            "render",
+            cases.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap()
+        ])),
+        1
+    );
+    assert!(!out.exists());
+}

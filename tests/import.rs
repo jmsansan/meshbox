@@ -114,3 +114,31 @@ fn import_depth_is_limited() {
     assert_eq!(errors.len(), 1);
     assert_eq!(errors[0].code, ErrorCode::LimitExceeded);
 }
+
+#[test]
+fn a_failed_import_is_read_once() {
+    let mut reads = 0;
+    let mut loader = |name: &str| -> Result<String, Error> {
+        reads += 1;
+        Err(Error::new(ErrorCode::Io, format!("no file {name}")))
+    };
+    let text = "import gone.meshbox\n".repeat(50);
+    let errors = check_with_loader(&text, &Limits::default(), &mut loader);
+    assert_eq!(errors.len(), 1);
+    assert_eq!(reads, 1);
+}
+
+#[test]
+fn definitions_past_the_limit_are_reported() {
+    let limits = Limits {
+        max_definitions: 3,
+        ..Limits::default()
+    };
+    let mut loader = files(&[("shared.meshbox", "")]);
+    let text = format!("{}mesh oops\n", "import shared.meshbox\n".repeat(5));
+    let errors = check_with_loader(&text, &limits, &mut loader);
+    assert!(
+        errors.iter().any(|e| e.code == ErrorCode::LimitExceeded),
+        "{errors:?}"
+    );
+}

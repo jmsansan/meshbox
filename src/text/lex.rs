@@ -75,9 +75,14 @@ pub(crate) fn lex<'a>(
         {
             close(&mut stack, &mut roots);
         }
-        // Past `max_roots` definitions, the rest of the text is not lexed: the parser
-        // reports the first definition past the limit.
+        // Past `max_roots` definitions and imports, the rest of the text is not lexed,
+        // and that is an error.
         if stack.is_empty() && roots.len() > max_roots {
+            errors.push(Error::at(
+                Position::in_file(file, number, 1),
+                ErrorCode::LimitExceeded,
+                format!("More than the limit of {max_roots} definitions and imports in one file"),
+            ));
             break;
         }
         let siblings = match stack.last() {

@@ -258,4 +258,13 @@ impl Export {
             Ok((format!("model-{name}.glb"), bytes))
         })
     }
+
+    /// The model named `name` as binary glTF.
+    pub fn glb(&self, name: &str) -> Result<Vec<u8>> {
+        let (name, mesh) =
+            self.models.iter().find(|(n, _)| n == name).ok_or_else(|| {
+                Error::new(ErrorCode::UnknownName, format!("Unknown model `{name}`"))
+            })?;
+        gltf::glb(&[gltf::Part { name, mesh }], self.png.as_deref())
+    }
 }
