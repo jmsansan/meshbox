@@ -209,3 +209,11 @@ fn an_empty_import_name_is_a_syntax_error() {
     assert_eq!(errors.len(), 1, "{errors:?}");
     assert_eq!(errors[0].code, ErrorCode::Syntax);
 }
+
+#[test]
+fn a_drive_relative_name_is_refused() {
+    let mut loader = files(&[]);
+    let errors = check_with_loader("import C:part.meshbox\n", &Limits::default(), &mut loader);
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].code, ErrorCode::InvalidArgument);
+}

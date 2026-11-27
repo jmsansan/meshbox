@@ -633,3 +633,14 @@ fn json_is_found_as_the_parser_reads_it() {
         "invalid_argument"
     );
 }
+
+#[test]
+fn check_takes_no_values() {
+    let output = meshbox(&["check", "scene.meshbox", "--model", "--json"]);
+    assert_eq!(status(&output), 2);
+    let doc = json::parse(String::from_utf8(output.stdout).unwrap().trim());
+    assert_eq!(
+        doc.get("diagnostics").at(0).get("code").str(),
+        "invalid_argument"
+    );
+}

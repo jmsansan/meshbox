@@ -77,16 +77,18 @@ pub fn run(args: &[String]) -> ExitCode {
 }
 
 /// Whether `--json` is among `args` as the flag, the way the arguments are parsed:
-/// `--model` takes any next argument, `--out` and `--scale` one that is not an
-/// option. `None` is an argument that is not Unicode.
+/// for `render`, `--model` takes any next argument, `--out` and `--scale` one that is
+/// not an option; other commands take no values. `None` is an argument that is not
+/// Unicode.
 pub fn wants_json<'a>(args: impl IntoIterator<Item = Option<&'a str>>) -> bool {
     let mut args = args.into_iter().peekable();
+    let render = args.peek() == Some(&Some("render"));
     while let Some(arg) = args.next() {
         match arg {
-            Some("--model") => {
+            Some("--model") if render => {
                 args.next();
             }
-            Some("--out" | "--scale") => {
+            Some("--out" | "--scale") if render => {
                 if args
                     .peek()
                     .is_some_and(|next| !next.is_some_and(|n| n.starts_with("--")))

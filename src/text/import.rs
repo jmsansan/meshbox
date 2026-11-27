@@ -100,6 +100,24 @@ impl Files {
                 ));
                 continue;
             }
+            // `C:part.meshbox` is relative to a drive's current directory, which a
+            // name cannot say: refused rather than guessed.
+            let b = written.as_bytes();
+            if b.len() >= 2
+                && b[0].is_ascii_alphabetic()
+                && b[1] == b':'
+                && !matches!(b.get(2), Some(b'/' | b'\\'))
+            {
+                loading.errors.push(name_token.error(
+                    ErrorCode::InvalidArgument,
+                    format!(
+                        "`{written}` is relative to a drive; write `{}/{}`, or a name relative to this file",
+                        &written[..2],
+                        &written[2..]
+                    ),
+                ));
+                continue;
+            }
             let name = resolve(&self.names[file as usize], written);
             let line = name_token.pos.line;
             if name.len() > MAX_NAME_BYTES {
