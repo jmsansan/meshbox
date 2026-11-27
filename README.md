@@ -106,9 +106,10 @@ palette autumn from=forest
 A palette maps one-character keys to `#rrggbb`, `#rrggbbaa` or `transparent`.
 `from=` copies another palette's keys, then replaces or adds its own. The syntax is
 spritebox's, `ramp` lines and `lint=` included, so **a file holding only palettes
-is valid in both crates** (names here are at most 128 characters), and a game's 2D
-and 3D art can share one palette file. meshbox reads nothing else of spritebox's: a `sprite` in a meshbox file is an
-error that names it.
+is valid in both crates** (names here are at most 128 characters, and spritebox wants
+UTF-8 without a byte order mark, which meshbox skips), and a game's 2D and 3D art can
+share one palette file. meshbox reads nothing else of spritebox's: a `sprite` in a
+meshbox file is an error that names it.
 
 `.` is empty space in a model whatever the palette says, and so is a fully
 transparent key.
