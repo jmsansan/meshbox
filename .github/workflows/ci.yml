@@ -35,13 +35,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      # meshbox depends on nothing but the standard library (#7).
+      # meshbox depends on nothing but the standard library (#7), on any target.
       - name: cargo tree lists meshbox alone
         shell: bash
         run: |
-          tree="$(cargo tree --locked --offline --edges normal,build,dev --prefix none)"
+          tree="$(cargo tree --locked --offline --target all --edges normal,build,dev --prefix none --format '{p}')"
           echo "$tree"
-          if [ "$(echo "$tree" | grep -v '^meshbox v' | grep -c .)" -ne 0 ]; then
+          if [ "$(echo "$tree" | grep -c .)" -ne 1 ]; then
             echo "meshbox must have no dependencies" >&2
             exit 1
           fi

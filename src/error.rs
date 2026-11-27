@@ -67,7 +67,7 @@ impl fmt::Display for ErrorCode {
 /// A place in text: a 1-based line, and a 1-based column counted in characters.
 ///
 /// Positions in an imported file say which file through [`Error::file`].
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Position {
     /// Which file of a parse: 0 for the text parsed, then imported files in the
     /// order loaded. First, so that errors sort by file, then line, then column.

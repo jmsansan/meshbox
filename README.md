@@ -9,8 +9,9 @@ assistant cannot model with a mouse, but it can write precise text, render it, l
 the preview and correct the text.
 
 **meshbox has zero dependencies.** It uses nothing but the Rust standard library: it
-has its own PNG encoder, JSON writer, glTF writer and software rasterizer. The same
-text gives the same bytes on every platform, `wasm32-unknown-unknown` included.
+brings its own PNG encoder, JSON writer, glTF writer and software rasterizer (as they
+land, see the table below). The same text gives the same bytes on every platform,
+`wasm32-unknown-unknown` included.
 
 ## Capabilities
 
@@ -32,7 +33,7 @@ text gives the same bytes on every platform, `wasm32-unknown-unknown` included.
 
 ## Limits
 
-`Limits` bounds the work any input can cause. Every `parse_with*` function takes one;
+`Limits` bounds the work any input can cause. Every parsing function takes one;
 the defaults suit hand-written files and untrusted input.
 
 | Limit | Default | Bounds |
