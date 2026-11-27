@@ -102,8 +102,9 @@ pub struct Error {
     pub code: ErrorCode,
     /// What is wrong, for people. Not stable: match on [`Error::code`].
     pub message: String,
-    /// Where in the text the error is. Every parse and validation error has one;
-    /// I/O and encoding errors do not.
+    /// Where in the text the error is, when it concerns a place, as a parse error or a
+    /// failed import (at its name) does. An error about the whole text, as its length,
+    /// or about an output has none.
     pub position: Option<Position>,
     /// The imported file that `position` is in, by the name its `import` resolves
     /// to; `None` for the text parsed itself.

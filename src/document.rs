@@ -118,8 +118,8 @@ impl Document {
         mesher::mesh(model, &self.palettes, texture.as_ref(), limits, &mut 0)
     }
 
-    /// The model named `name` as binary glTF, with the palette texture embedded,
-    /// within the default [`Limits`].
+    /// The model named `name` as binary glTF, with the palette texture embedded when
+    /// the model has faces, within the default [`Limits`].
     pub fn glb(&self, name: &str) -> Result<Vec<u8>> {
         self.glb_with(name, &Limits::default())
     }
