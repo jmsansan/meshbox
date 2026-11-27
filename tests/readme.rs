@@ -22,6 +22,7 @@ fn readme_meshbox_blocks_are_valid() {
             None => {}
         }
     }
+    assert!(current.is_none(), "a meshbox block of the README is not closed");
     assert!(blocks.len() >= 2, "the README has meshbox examples");
     for block in &blocks {
         assert_eq!(check(block), [], "{block}");
@@ -35,8 +36,10 @@ fn the_committed_preview_matches_the_showcase() {
     let document = Document::parse(text).unwrap();
     let preview = document.preview(&PreviewOptions::default()).unwrap();
     let committed = include_bytes!("../docs/showcase-preview.png");
+    // Blessing writes the new preview, which the next build embeds.
     if std::env::var_os("MESHBOX_BLESS").is_some() {
         std::fs::write("docs/showcase-preview.png", png::encode(&preview)).unwrap();
+        return;
     }
     assert!(
         png::encode(&preview) == committed,

@@ -154,26 +154,32 @@ import palettes.meshbox
 import "art/props.meshbox"
 ```
 
-`import NAME` brings in another file's definitions; the name may be quoted. Names
-resolve against the importing file's directory, and the caller's loader reads them
-(see below), so nothing touches the file system unless the loader does. Imports in a
+`import NAME` brings in another file's definitions; the name may be quoted, but has no
+spaces. The caller's loader reads it (see below), so nothing touches the file system
+unless the loader does. Names resolve the same on every platform: against the
+importing file's directory unless they start with `/`, a drive (`C:/`) or a network
+share (`//server/share`); `\` is `/`; and `.` and `..` are resolved by name, never
+above a root. A drive-relative name such as `C:part.meshbox` is refused. Imports in a
 cycle are an error, and so are imports nested deeper than `max_nesting`.
 
 ## Output
 
 - **Meshes.** `Document::mesh` gives a `Mesh`: positions, normals and UVs as `f32`,
   `u32` indices, counter-clockwise front faces, opaque triangles first and
-  translucent ones from `translucent_start`. Faces between solid voxels are dropped,
-  and faces of one key and direction in a plane are merged into rectangles by greedy
-  meshing, in a fixed order, so the same text gives the same bytes.
+  translucent ones from `translucent_start`. Faces between two opaque voxels, or two
+  voxels of one translucent key, are dropped; an opaque face against a translucent
+  voxel is kept, and so are both faces between different translucent keys. Faces of
+  one key and direction in a plane are merged into rectangles by greedy meshing, in a
+  fixed order, so the same text gives the same bytes.
 - **The palette texture.** Every palette of a document in one RGBA8 image, one row
   per palette and one texel per key; each key's UV is its texel's center. Every model
   of a document samples this one texture, so a renderer can draw them all with one
   material.
 - **Binary glTF.** `Document::glb(name)`, or `Document::export()` and
-  `Export::glb_files()` for every model. One scene, one node per model at its origin,
-  the palette texture embedded as PNG with nearest filtering and clamped edges, an
-  opaque material, and a blended one for translucent keys. The showcase's files pass
+  `Export::glb_files()` for a file per model. Each file has one scene with one node at
+  the model's origin and, when the model has faces, the palette texture embedded as
+  PNG with nearest filtering and clamped edges, an opaque material for opaque keys and
+  a blended one for translucent keys. The showcase's files pass
   the Khronos glTF Validator with no errors or warnings, and Diamon's `gltf` feature
   imports them.
 - **Preview sheets.** `Document::preview` draws each model from the front, the right,
@@ -189,8 +195,8 @@ text.
   side (looking toward -X), the top (looking down, the back at the top, exactly as
   each `level` block is written) and a 3/4 view from the front right. The top view's
   grid lines mark voxel boundaries, so a voxel's column and row can be counted.
-- **Use `meshbox check --json`** for diagnostics: each has a stable `code`, a `line`
-  and a `column`.
+- **Use `meshbox check --json`** for diagnostics: each has a stable `code`, and a
+  `line` and `column` when it concerns a place in a file.
 - **Keep to a scale.** At the default `unit=1/16`, sixteen voxels are a meter; a
   character is 24 to 32 voxels tall, a door about 32.
 - **Put pivots at the feet.** The default origin is the center of the bottom face,
@@ -213,8 +219,9 @@ assert!(document.model("dot").is_some());
 # Ok::<(), Error>(())
 ```
 
-The library never touches the file system: imports go through the loader, and every
-output is returned in memory. [`examples/embedded.rs`](examples/embedded.rs) builds
+Parsing and rendering never touch the file system: imports go through the loader,
+and every output is returned in memory (only `png::write_file`, when called, writes a
+file). [`examples/embedded.rs`](examples/embedded.rs) builds
 glb files from text compiled into the program and builds for
 `wasm32-unknown-unknown`.
 
@@ -226,15 +233,22 @@ meshbox render <file> --out <dir> [--scale <n>] [--model <name>] [--json]
 ```
 
 - `check` prints each diagnostic as `file:line:column: error[code]: message` on
-  standard error, or one JSON object on standard output with `--json`: `version`,
-  `file`, `ok`, `diagnostics` (each with `code`, `severity`, `line`, `column`,
-  `message`, and `file` for an imported file) and `written`.
-- `render` writes `model-NAME.glb` for each model (or only `--model`), `palette.png`,
-  `preview.png` and `meshbox.json`, which lists each model's file, size, origin, unit,
-  bounds and triangle and vertex counts. Nothing is written when the file has errors.
-  `--scale` is the preview's pixels per voxel, 1 to 32 (default 8).
-- `<file>` may be `-` for standard input. Imports are read relative to the file.
-- Exit statuses: 0 success, 1 the file has errors, 2 bad usage, 3 an I/O error.
+  standard error (`file: error[code]: message` when it has no place), or one JSON
+  object on standard output with `--json`: `version`, `file` (absent for bad usage),
+  `ok`, `diagnostics` (each with `code`, `severity`, `message`, `line` and `column`
+  when it has a place, and `file` for an imported file) and `written`.
+- `render` writes `model-NAME.glb` for each model, `palette.png` (the whole
+  document's palette texture), `preview.png` and `meshbox.json`, which lists each
+  model's file, size, origin, unit, bounds and triangle and vertex counts. `--model`
+  limits the glb files, the preview and the manifest to one model. Nothing is
+  written when the file has errors or an output does not fit the limits; if a write
+  fails, the files written before it stay and `written` lists them. `--scale` is the
+  preview's pixels per voxel, 1 to 32 (default 8).
+- `<file>` may be `-` for standard input, whose imports are read relative to the
+  current directory; a file's imports are read relative to the file.
+- Exit statuses: 0 success; 1 the file has errors, or what is asked of it cannot be
+  done (an unknown `--model`, an output past the limits); 2 bad usage; 3 an I/O
+  error.
 
 ## Errors
 
@@ -257,15 +271,16 @@ imported file, that file's name. The codes and their JSON names:
 
 ## Limits
 
-`Limits` bounds the work any input can cause. Every parsing function takes one;
-the defaults suit hand-written files and untrusted input. Parsing takes memory in
+`Limits` bounds the work any input can cause. The functions with `_with` in their
+names take one, and
+the others (`Document::parse`, `check` and so on) use the defaults, which suit hand-written files and untrusted input. Parsing takes memory in
 proportion to the text, which `max_text_bytes` bounds, and keeps the first 1000
 errors by position.
 
 | Limit | Default | Bounds |
 | --- | --- | --- |
 | `max_text_bytes` | 4194304 | Bytes of text, imported files included |
-| `max_definitions` | 4096 | Top-level definitions |
+| `max_definitions` | 4096 | Top-level definitions, and top-level lines (imports included) of any one file |
 | `max_palette_colors` | 256 | Keys in one palette |
 | `max_voxel_side` | 256 | Width, depth or height of one voxel model |
 | `max_voxels` | 16777216 | Voxels of all models together |

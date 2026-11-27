@@ -21,12 +21,14 @@ The first release: voxel models from text to glTF and a preview sheet.
   colors and RGBA8 otherwise, with no metadata chunks.
 - Greedy meshing: `Document::mesh` gives a `Mesh` of positions, normals, UVs and
   `u32` indices, counter-clockwise, opaque triangles first and translucent ones after
-  `translucent_start`. Faces between solid voxels are dropped and faces of one key and
-  direction in a plane are merged into rectangles, in a fixed order, so the same text
-  gives the same bytes on every platform. `Mesh::stats` and `Mesh::bounds`.
-- Binary glTF: `Document::glb` and `Document::glb_files` write one scene with a node
-  per model at its origin, the palette texture embedded as PNG with nearest sampling
-  and clamped edges, an opaque material and, for translucent keys, a blended one.
+  `translucent_start`. Faces between two opaque voxels, or two voxels of one
+  translucent key, are dropped, and faces of one key and direction in a plane are
+  merged into rectangles, in a fixed order, so the same text gives the same bytes on
+  every platform. `Mesh::stats` and `Mesh::bounds`.
+- Binary glTF: `Document::glb`, and `Document::export` with `Export::glb_files`, write
+  a file per model with one scene and one node at its origin and, when the model has
+  faces, the palette texture embedded as PNG with nearest sampling and clamped edges,
+  an opaque material for opaque keys and a blended one for translucent keys.
 - `examples/embedded.rs`: glb files from text compiled into the program.
 - Preview sheets: `Document::preview` draws each model from the front, the right, the
   top and a 3/4 view, with its name and size above, using a fixed-point CPU
@@ -46,8 +48,9 @@ The first release: voxel models from text to glTF and a preview sheet.
 - The `meshbox` command: `check <file> [--json]` and
   `render <file> --out <dir> [--scale <n>] [--model <name>] [--json]`, which writes
   `model-NAME.glb` per model, `palette.png`, `preview.png` and `meshbox.json`, and
-  nothing when the file has errors. `-` reads standard input. Exit statuses: 0
-  success, 1 errors in the file, 2 bad usage, 3 I/O errors.
+  nothing when the file has errors or an output does not fit. `-` reads standard
+  input. Exit statuses: 0 success, 1 errors in the file or in what is asked of it, 2
+  bad usage, 3 I/O errors.
 - The README in full, `examples/showcase.meshbox` (a toadstool, a treasure chest and a
   fence post sharing one palette) and its preview in `docs/showcase-preview.png`; a
   test keeps the README's examples valid and the committed preview current.
