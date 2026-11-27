@@ -561,7 +561,9 @@ fn review_cases_eight() {
     // One file reached by a relative and an absolute spelling is one file.
     std::fs::create_dir_all(d.join("props")).unwrap();
     std::fs::write(d.join("shared.meshbox"), "palette p\n  a #ffffff\n").unwrap();
-    // The spelling the command uses for the file given, which is not resolved.
+    // The root is given in the same spelling as the import: a working directory or
+    // a temporary directory may be another spelling of it, as `/private/var` of
+    // `/var` on macOS or a short name on Windows.
     let full = std::path::absolute(&d).unwrap().join("shared.meshbox");
     let full = full.to_str().unwrap().replace('\\', "/");
     let full = full.strip_prefix("//?/").unwrap_or(&full).to_owned();
@@ -575,7 +577,8 @@ fn review_cases_eight() {
         "import shared.meshbox\nimport props/box.meshbox\n",
     )
     .unwrap();
-    let output = run(&["check", "scene.meshbox"]);
+    let scene = std::path::absolute(&d).unwrap().join("scene.meshbox");
+    let output = run(&["check", scene.to_str().unwrap()]);
     assert_eq!(status(&output), 0, "{output:?}");
     // Names in messages are as the author wrote them.
     std::fs::write(
