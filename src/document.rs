@@ -223,7 +223,7 @@ pub fn check(text: &str) -> Vec<Error> {
     check_with(text, &Limits::default())
 }
 
-/// Parses `text` within `limits` and returns every error, ordered by position.
+/// Parses `text` within `limits` and returns the errors it finds, as [`check`] does.
 pub fn check_with(text: &str, limits: &Limits) -> Vec<Error> {
     match text::parse(text, "", limits, None) {
         Ok(_) => Vec::new(),
@@ -231,9 +231,9 @@ pub fn check_with(text: &str, limits: &Limits) -> Vec<Error> {
     }
 }
 
-/// Parses `text` within `limits`, reading imports through `loader`, and returns every
-/// error, ordered by file and position, up to 1000. An error in an imported file names
-/// that file in [`Error::file`].
+/// Parses `text` within `limits`, reading imports through `loader`, and returns the
+/// errors it finds, as [`check`] does, ordered by file and position. An error in an
+/// imported file names that file in [`Error::file`].
 pub fn check_with_loader(
     text: &str,
     limits: &Limits,
@@ -297,8 +297,8 @@ impl Export {
 }
 
 /// Parses `text`, the contents of the file `name`, reading its imports through
-/// `loader`, and returns every error, up to 1000. Imports resolve against `name`'s
-/// directory, and a file that imports itself is a cycle.
+/// `loader`, and returns the errors it finds, as [`check`] does. Imports resolve
+/// against `name`'s directory, and a file that imports itself is a cycle.
 pub fn check_file_with_loader(
     name: &str,
     text: &str,

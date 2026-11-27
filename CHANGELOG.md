@@ -21,7 +21,7 @@ The first release: voxel models from text to glTF and a preview sheet.
 - A PNG encoder of the crate's own: indexed (1 to 8 bits, with `tRNS` when a color
   is not opaque) for up to 256 colors and RGBA8 otherwise, with no metadata chunks.
 - Greedy meshing: `Document::mesh` gives a `Mesh` of positions, normals, UVs and
-  `u32` indices, counter-clockwise, opaque triangles first and translucent ones after
+  `u32` indices, counter-clockwise, opaque triangles first and translucent ones from
   `translucent_start`. Faces between two opaque voxels, or two voxels of one
   translucent key, are dropped, and faces of one key and direction in a plane are
   merged into rectangles, in a fixed order, so the same text gives the same bytes on
@@ -44,7 +44,7 @@ The first release: voxel models from text to glTF and a preview sheet.
   `check_file_with_loader` for text with a name of its own; nothing touches the file
   system unless the loader does. Names resolve against the importing file's
   directory unless rooted (`/`, a drive or a share), the same on every platform;
-  cycles are `cycle`, depth past `max_nesting` (counted where a file is first
+  cycles are `cycle`, depth past `max_nesting` or 256 (counted where a file is first
   reached) is `limit_exceeded`, and an error in an imported file names it.
   `Document::export_models_with` and `preview_models_with` take a subset of the
   models.

@@ -163,7 +163,7 @@ importing file's directory unless they start with `/`, a drive (`C:/`) or a netw
 share (`//server/share`); `\` is `/`; and `.` and `..` are resolved by name, never
 above a root. A drive-relative name such as `C:part.meshbox` is refused. Imports in a
 cycle are an error, and so is a file first reached through more than `max_nesting`
-imports.
+imports (or 256, whichever is less).
 
 ## Output
 
