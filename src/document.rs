@@ -118,8 +118,8 @@ impl Document {
         mesher::mesh(model, &self.palettes, texture.as_ref(), limits, &mut 0)
     }
 
-    /// The model named `name` as binary glTF, with the palette texture embedded,
-    /// within the default [`Limits`].
+    /// The model named `name` as binary glTF, with the palette texture embedded when
+    /// the model has faces, within the default [`Limits`].
     pub fn glb(&self, name: &str) -> Result<Vec<u8>> {
         self.glb_with(name, &Limits::default())
     }
@@ -210,8 +210,9 @@ impl Document {
     }
 }
 
-/// Parses `text` and returns every error, ordered by position, up to 1000: an empty
-/// list when the text is valid.
+/// Parses `text` and returns the errors it finds, ordered by position, up to 1000: an
+/// empty list when the text is valid. It reports what it can rather than every fault:
+/// a line may stop being read at its first fault.
 ///
 /// ```
 /// let errors = meshbox::check("palette p\n  rr #ff0000\nvoxels\n");
@@ -222,7 +223,7 @@ pub fn check(text: &str) -> Vec<Error> {
     check_with(text, &Limits::default())
 }
 
-/// Parses `text` within `limits` and returns every error, ordered by position.
+/// Parses `text` within `limits` and returns the errors it finds, as [`check`] does.
 pub fn check_with(text: &str, limits: &Limits) -> Vec<Error> {
     match text::parse(text, "", limits, None) {
         Ok(_) => Vec::new(),
@@ -230,9 +231,9 @@ pub fn check_with(text: &str, limits: &Limits) -> Vec<Error> {
     }
 }
 
-/// Parses `text` within `limits`, reading imports through `loader`, and returns every
-/// error, ordered by file and position, up to 1000. An error in an imported file names
-/// that file in [`Error::file`].
+/// Parses `text` within `limits`, reading imports through `loader`, and returns the
+/// errors it finds, as [`check`] does, ordered by file and position. An error in an
+/// imported file names that file in [`Error::file`].
 pub fn check_with_loader(
     text: &str,
     limits: &Limits,
@@ -265,7 +266,9 @@ pub struct Export {
 }
 
 impl Export {
-    /// Each model's name and mesh, in definition order.
+    /// Each model's name and mesh, in the order exported: definition order for
+    /// [`Document::export`], the order of the names for
+    /// [`Document::export_models_with`].
     pub fn meshes(&self) -> impl Iterator<Item = (&str, &Mesh)> {
         self.models.iter().map(|(n, m)| (n.as_str(), m))
     }
@@ -275,9 +278,9 @@ impl Export {
         self.png.as_deref()
     }
 
-    /// Each model as binary glTF, `model-NAME.glb`, in definition order. Each file is
-    /// built when the iterator reaches it, so that writing them one by one keeps one
-    /// in memory at a time.
+    /// Each model as binary glTF, `model-NAME.glb`, in the order of
+    /// [`Export::meshes`]. Each file is built when the iterator reaches it, so that
+    /// writing them one by one keeps one in memory at a time.
     pub fn glb_files(&self) -> impl Iterator<Item = Result<(String, Vec<u8>)>> + '_ {
         self.models.iter().map(|(name, mesh)| {
             let bytes = gltf::glb(&[gltf::Part { name, mesh }], self.png.as_deref())?;
@@ -296,8 +299,8 @@ impl Export {
 }
 
 /// Parses `text`, the contents of the file `name`, reading its imports through
-/// `loader`, and returns every error, up to 1000. Imports resolve against `name`'s
-/// directory, and a file that imports itself is a cycle.
+/// `loader`, and returns the errors it finds, as [`check`] does. Imports resolve
+/// against `name`'s directory, and a file that imports itself is a cycle.
 pub fn check_file_with_loader(
     name: &str,
     text: &str,

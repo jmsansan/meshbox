@@ -10,7 +10,8 @@ use std::fmt;
 pub enum ErrorCode {
     /// Malformed text: an unknown directive, a missing value, bad indentation.
     Syntax,
-    /// A value of the right shape but out of range, such as a color or a size.
+    /// A value that is not valid: out of range, as a size, or malformed, as the color
+    /// `#ff00`.
     InvalidArgument,
     /// A reference to a palette, model or palette key that is not defined.
     UnknownName,
@@ -101,8 +102,8 @@ pub struct Error {
     pub code: ErrorCode,
     /// What is wrong, for people. Not stable: match on [`Error::code`].
     pub message: String,
-    /// Where in the text the error is. Every parse and validation error has one;
-    /// I/O and encoding errors do not.
+    /// Where in the text the error is, when there is a place to point at. Output
+    /// errors have none.
     pub position: Option<Position>,
     /// The imported file that `position` is in, by the name its `import` resolves
     /// to; `None` for the text parsed itself.

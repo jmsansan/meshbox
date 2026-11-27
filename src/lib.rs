@@ -38,3 +38,8 @@ pub use mesh::{Bounds, Mesh, MeshStats};
 pub use palette::{Palette, PaletteTexture};
 pub use preview::PreviewOptions;
 pub use voxel::VoxelModel;
+
+/// The README's Rust examples, compiled and run as doc tests.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+pub struct ReadmeDoctests;

@@ -39,7 +39,8 @@ impl Palette {
 ///
 /// Each key's UV is the center of its texel, so nearest sampling never reads a
 /// neighbor. Every model of a document uses this one texture, so a renderer can
-/// draw them all with one material.
+/// draw them all with it: one opaque material, and one blended material for the
+/// translucent triangles.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PaletteTexture {
     image: Image,
