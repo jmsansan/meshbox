@@ -22,7 +22,7 @@ land, see the table below). The same text gives the same bytes on every platform
 | Voxel models from stacked grids | Available |
 | Greedy meshing to a deterministic mesh | Available |
 | Binary glTF (`.glb`) export | Available |
-| Four-view preview sheet (PNG) | Planned (0.1) |
+| Four-view preview sheet (PNG) | Available |
 | Imports through a loader, in memory and in WebAssembly | Planned (0.1) |
 | Command-line tool: `check` and `render` | Planned (0.1) |
 | Low-poly primitives, composition and modifiers | Planned (0.2) |

@@ -73,6 +73,6 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: wasmtime
-      - run: cargo test --locked --offline --target wasm32-wasip1 --test mesh --test gltf --test palette --test png --test voxel --test parse
+      - run: cargo test --locked --offline --target wasm32-wasip1 --test mesh --test gltf --test palette --test png --test voxel --test parse --test preview
         env:
           CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime

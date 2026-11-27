@@ -16,12 +16,15 @@ mod gltf;
 mod image;
 #[allow(dead_code)]
 mod json;
+mod label_font;
 mod limits;
 mod mesh;
 mod mesher;
 mod oklab;
 mod palette;
 pub mod png;
+mod preview;
+mod raster;
 mod text;
 mod voxel;
 
@@ -31,4 +34,5 @@ pub use image::{Color, Image};
 pub use limits::Limits;
 pub use mesh::{Bounds, Mesh, MeshStats};
 pub use palette::{Palette, PaletteTexture};
+pub use preview::PreviewOptions;
 pub use voxel::VoxelModel;

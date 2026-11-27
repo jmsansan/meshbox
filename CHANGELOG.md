@@ -26,3 +26,9 @@
   per model at its origin, the palette texture embedded as PNG with nearest sampling
   and clamped edges, an opaque material and, for translucent keys, a blended one.
 - `examples/embedded.rs`: glb files from text compiled into the program.
+- Preview sheets: `Document::preview` draws each model from the front, the right, the
+  top and a 3/4 view, with its name and size above, using a fixed-point CPU
+  rasterizer with a depth buffer, flat shading from one light and blended
+  translucent faces. The top view has optional grid lines at voxel boundaries, and
+  the labels use a built-in 5×7 pixel font. The same document gives the same pixels
+  on every platform.
