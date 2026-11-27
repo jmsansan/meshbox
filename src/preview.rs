@@ -189,13 +189,15 @@ fn render(
     }
     // Translucent faces after the opaque ones, blended at each pixel from the
     // farthest to the nearest.
+    // Translucent layers are bounded like the pixels of an image, and never past what
+    // the platform can allocate, so that deep stacks of glass cannot exhaust memory.
+    let max_fragments = usize::try_from(limits.max_image_pixels)
+        .unwrap_or(usize::MAX)
+        .min(isize::MAX as usize / (2 * std::mem::size_of::<crate::raster::Fragment>()));
     let mut fragments = Vec::new();
     for q in clear.iter().filter(|q| frame.faces(q.axis, q.positive)) {
         for t in triangles(q) {
-            canvas.fragments(t, color(q), &mut fragments);
-            // Translucent layers are bounded like the pixels of an image, so that
-            // deep stacks of glass cannot exhaust memory.
-            if fragments.len() as u64 > limits.max_image_pixels {
+            if !canvas.fragments(t, color(q), &mut fragments, max_fragments) {
                 return Err(Error::new(
                     ErrorCode::LimitExceeded,
                     format!(

@@ -138,16 +138,30 @@ impl Canvas {
         });
     }
 
-    /// Collects the fragments of a translucent triangle that are nearer than the
-    /// opaque surface.
-    pub fn fragments(&self, v: [Vertex; 3], color: Color, out: &mut Vec<Fragment>) {
+    /// Collects the fragments of a translucent triangle that are not behind the
+    /// opaque surface; at equal depth the glass is in front, as it is where a
+    /// translucent face meets an opaque one. Returns false, having stopped, once
+    /// `out` would hold more than `max` fragments.
+    pub fn fragments(
+        &self,
+        v: [Vertex; 3],
+        color: Color,
+        out: &mut Vec<Fragment>,
+        max: usize,
+    ) -> bool {
         let (w, h) = (self.image.width() as i64, self.image.height() as i64);
+        let mut room = true;
         cover(v, w, h, |px, py, z| {
             let i = (py * w + px) as usize;
-            if z > self.depth[i] {
-                out.push((i, z, color));
+            if room && z >= self.depth[i] {
+                if out.len() >= max {
+                    room = false;
+                } else {
+                    out.push((i, z, color));
+                }
             }
         });
+        room
     }
 
     /// Blends translucent fragments, at each pixel from the farthest to the nearest.

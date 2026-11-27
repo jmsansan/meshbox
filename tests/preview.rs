@@ -300,3 +300,19 @@ fn translucent_layers_are_limited() {
         .is_ok()
     );
 }
+
+#[test]
+fn glass_meeting_an_opaque_face_stays_in_front() {
+    // A glass voxel in front of a red one, seen in the 3/4 view at a scale where
+    // their faces meet at nearly equal depths along a shared edge.
+    let text = "palette p\n  r #ff0000\n  g #00ff0080\nvoxels m 5x4x1 palette=p\n  level 0\n    .....\n    .....\n    ....r\n    ....g\n";
+    for scale in [7, 19, 31] {
+        let image = preview(text, scale);
+        let bare = Color::rgb(177, 0, 0);
+        for y in 0..image.height() {
+            for x in 0..image.width() {
+                assert_ne!(pixel(&image, x, y), bare, "({x}, {y}) at scale {scale}");
+            }
+        }
+    }
+}
