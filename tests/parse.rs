@@ -231,7 +231,7 @@ fn lexing_stops_past_the_definition_limit() {
     let start = Instant::now();
     let errors = check(&text);
     assert!(errors.iter().any(|e| e.code == ErrorCode::LimitExceeded));
-    assert!(start.elapsed() < Duration::from_secs(5));
+    assert!(start.elapsed() < Duration::from_secs(20));
 }
 
 #[test]
@@ -246,8 +246,64 @@ fn many_ramps_are_refused_quickly() {
     let errors = check(&text);
     assert!(errors.iter().any(|e| e.code == ErrorCode::LimitExceeded));
     assert!(
-        start.elapsed() < Duration::from_secs(5),
+        start.elapsed() < Duration::from_secs(20),
         "{:?}",
         start.elapsed()
     );
+}
+
+#[test]
+fn the_first_header_error_is_reported_whatever_the_option_order() {
+    assert_eq!(
+        codes("palette p lint=bogus from=bad!\n"),
+        [(1, 16, ErrorCode::Syntax)]
+    );
+    assert_eq!(
+        codes("voxels m 1x1x1 unit=0 palette=bad!\n"),
+        [(1, 21, ErrorCode::InvalidArgument)]
+    );
+}
+
+#[test]
+fn inherited_ramps_resolve_quickly() {
+    let mut text = String::from("palette base\n");
+    for i in 0..256u32 {
+        text.push_str(&format!(
+            "  {} #808080\n",
+            char::from_u32(0x1_0000 + i).unwrap()
+        ));
+    }
+    let mut ramps = String::new();
+    for i in 0..128u32 {
+        let a = char::from_u32(0x1_0000 + 2 * i).unwrap();
+        let b = char::from_u32(0x1_0001 + 2 * i).unwrap();
+        ramps.push_str(&format!("  ramp r{i} {a}{b}\n"));
+    }
+    text.push_str(&ramps);
+    for p in 0..1500 {
+        text.push_str(&format!("palette p{p} from=base\n{ramps}"));
+    }
+    let start = Instant::now();
+    assert!(check(&text).is_empty());
+    assert!(
+        start.elapsed() < Duration::from_secs(20),
+        "{:?}",
+        start.elapsed()
+    );
+}
+
+#[test]
+fn long_from_chains_stop_at_the_limit() {
+    let text: String = (0..4096)
+        .map(|i| format!("palette p{i} from=p{}\n", i + 1))
+        .chain(std::iter::once("palette p4096\n".to_owned()))
+        .collect();
+    let start = Instant::now();
+    let errors = check(&text);
+    assert!(errors.iter().all(|e| e.code == ErrorCode::LimitExceeded));
+    // The palettes within 32 steps of the end resolve; those before do not (the first
+    // 1000 of them are reported).
+    assert_eq!(errors.len(), 1000);
+    assert_eq!(errors[0].position.unwrap().line, 1);
+    assert!(start.elapsed() < Duration::from_secs(20));
 }

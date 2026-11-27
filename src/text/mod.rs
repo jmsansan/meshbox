@@ -2,7 +2,7 @@
 
 pub(crate) mod lex;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::document::Document;
 use crate::error::Errors;
@@ -379,14 +379,16 @@ impl<'a> Parser<'a, '_> {
             ));
         }
         let from = header.option("from");
-        if let Some(from) = from {
-            check_name(from)?;
-        }
-        if let Some(lint) = header.option("lint") {
-            lint_option(lint)?;
-        }
+        let from_name = from.map(check_name).transpose();
+        let lint = header.option("lint").map(lint_option).transpose();
         let name = header.name;
-        header.finish("palette", "`from=`")?;
+        let rest = header.finish("palette", "`from=`");
+        // The first error in the text, whatever order the options are written in.
+        first_error([
+            from_name.as_ref().err(),
+            lint.as_ref().err(),
+            rest.as_ref().err(),
+        ])?;
         let mut colors: Vec<(char, Color)> = Vec::new();
         let mut ramps: Vec<RampDef<'a>> = Vec::new();
         for child in &node.children {
@@ -630,17 +632,30 @@ impl<'a> Parser<'a, '_> {
             ));
         }
         let size: [u32; 3] = size(size_token, self.limits.max_voxel_side, "5x5x4")?;
+        // The options are checked together and the first error in the text is the one
+        // reported, whatever order they are written in.
         let palette = header.option("palette").ok_or_else(|| {
             node.line.tokens[node.line.tokens.len() - 1]
                 .end_error("Expected `palette=NAME`: the palette of the model's keys".to_owned())
-        })?;
-        check_name(palette)?;
-        let origin = header.option("origin").map(vector).transpose()?;
-        let unit = match header.option("unit") {
-            Some(t) => length(t)?,
-            None => 1.0 / 16.0,
+        });
+        let palette_name = palette.clone().and_then(|p| check_name(p).map(|_| p));
+        let origin = header.option("origin").map(vector).transpose();
+        let unit = header.option("unit").map(length).transpose();
+        let rest = header.finish("voxel model", "`palette=`, `origin=` or `unit=`");
+        let first = first_error([
+            palette_name.as_ref().err(),
+            origin.as_ref().err(),
+            unit.as_ref().err(),
+            rest.as_ref().err(),
+        ]);
+        let (Ok(palette), Ok(origin), Ok(unit), Ok(())) =
+            (palette_name, origin, unit, first.clone())
+        else {
+            return Err(first
+                .err()
+                .unwrap_or_else(|| name.error(ErrorCode::Syntax, "Malformed voxel model header")));
         };
-        header.finish("voxel model", "`palette=`, `origin=` or `unit=`")?;
+        let unit = unit.unwrap_or(1.0 / 16.0);
         // The voxels are counted, and refused, before memory for them is allocated.
         let cells = size.iter().fold(0u64, |acc, &s| {
             if acc == 0 {
@@ -815,6 +830,7 @@ impl<'a> Parser<'a, '_> {
         }
         let mut models: Vec<VoxelModel> = Vec::new();
         let mut names: HashMap<&str, Position> = HashMap::new();
+        let written: HashSet<&str> = self.palettes.iter().map(|d| d.name.text).collect();
         for def in &self.models {
             if let Some(&first) = names.get(def.name.text) {
                 self.errors.push(duplicate(def.name, "Model", first));
@@ -823,11 +839,7 @@ impl<'a> Parser<'a, '_> {
             names.insert(def.name.text, def.name.pos);
             let Some(&p) = index.get(def.palette.text) else {
                 // A palette with errors of its own has them reported already.
-                if !self
-                    .palettes
-                    .iter()
-                    .any(|d| d.name.text == def.palette.text)
-                {
+                if !written.contains(def.palette.text) {
                     self.errors.push(def.palette.error(
                         ErrorCode::UnknownName,
                         format!("Unknown palette `{}`", def.palette.text),
@@ -931,6 +943,7 @@ impl<'a> Parser<'a, '_> {
             // The chain of `from=` from `start` to a palette that is resolved, failed,
             // or copies none; palettes are then resolved from its end back.
             let mut chain = vec![start];
+            let mut on_chain: HashSet<usize> = HashSet::from([start]);
             let mut error = None;
             loop {
                 let current = chain[chain.len() - 1];
@@ -946,7 +959,7 @@ impl<'a> Parser<'a, '_> {
                     ));
                     break;
                 };
-                if chain.contains(&next) {
+                if on_chain.contains(&next) {
                     error = Some(from.error(
                         ErrorCode::Cycle,
                         format!(
@@ -956,7 +969,26 @@ impl<'a> Parser<'a, '_> {
                     ));
                     break;
                 }
+                // `start` is more steps from the end than the limit: it alone fails, and
+                // the chain is walked no further; the palettes after it are resolved
+                // from their own starts.
+                if chain.len() > self.limits.max_nesting {
+                    let start_from = self.palettes[start].from.unwrap_or(from);
+                    self.errors.push(start_from.error(
+                        ErrorCode::LimitExceeded,
+                        format!(
+                            "Palettes copied `from=` more than the limit of {} deep",
+                            self.limits.max_nesting
+                        ),
+                    ));
+                    state[start] = State::Failed;
+                    break;
+                }
                 chain.push(next);
+                on_chain.insert(next);
+            }
+            if state[start] == State::Failed {
+                continue;
             }
             if let Some(e) = error {
                 self.errors.push(e);
@@ -1001,22 +1033,29 @@ impl<'a> Parser<'a, '_> {
                     Some(p) => (p.keys.clone(), p.ramps.clone()),
                     None => (Vec::new(), Vec::new()),
                 };
+                let mut slots: HashMap<char, usize> =
+                    keys.iter().enumerate().map(|(i, &(k, _))| (k, i)).collect();
                 for &(key, color) in &def.colors {
-                    match keys.iter_mut().find(|(k, _)| *k == key) {
-                        Some(slot) => slot.1 = color,
-                        None => keys.push((key, color)),
+                    match slots.get(&key) {
+                        Some(&i) => keys[i].1 = color,
+                        None => {
+                            slots.insert(key, keys.len());
+                            keys.push((key, color));
+                        }
                     }
                 }
                 // A ramp of the palette copied is replaced by one of the same name; the
                 // others keep their keys, which no ramp written here may share.
-                let replaced: Vec<&str> = def.ramps.iter().map(|(r, _)| r.text).collect();
+                let replaced: HashSet<&str> = def.ramps.iter().map(|(r, _)| r.text).collect();
+                let kept_keys: HashMap<char, &str> = ramps
+                    .iter()
+                    .filter(|(r, _)| !replaced.contains(r.as_str()))
+                    .flat_map(|(r, k)| k.iter().map(move |&c| (c, r.as_str())))
+                    .collect();
+                let mut fresh: Vec<(String, Vec<char>)> = Vec::new();
                 for (name, ramp_keys) in &def.ramps {
                     let shared = ramp_keys.iter().find_map(|&(key, pos)| {
-                        ramps
-                            .iter()
-                            .filter(|(r, _)| !replaced.contains(&r.as_str()))
-                            .find(|(_, k)| k.contains(&key))
-                            .map(|(r, _)| (key, pos, r.clone()))
+                        kept_keys.get(&key).map(|&r| (key, pos, r.to_owned()))
                     });
                     if let Some((key, pos, other)) = shared {
                         self.errors.push(Error::at(
@@ -1029,9 +1068,7 @@ impl<'a> Parser<'a, '_> {
                         ));
                         continue;
                     }
-                    let missing = ramp_keys
-                        .iter()
-                        .find(|(k, _)| !keys.iter().any(|(c, _)| c == k));
+                    let missing = ramp_keys.iter().find(|(k, _)| !slots.contains_key(k));
                     if let Some(&(key, pos)) = missing {
                         self.errors.push(Error::at(
                             pos,
@@ -1043,13 +1080,24 @@ impl<'a> Parser<'a, '_> {
                         ));
                         continue;
                     }
-                    let made = (
+                    fresh.push((
                         name.text.to_owned(),
                         ramp_keys.iter().map(|&(k, _)| k).collect(),
-                    );
-                    match ramps.iter_mut().find(|(r, _)| *r == made.0) {
-                        Some(old) => *old = made,
-                        None => ramps.push(made),
+                    ));
+                }
+                // A replaced ramp keeps its place; new ones follow.
+                let mut places: HashMap<String, usize> = ramps
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (r, _))| (r.clone(), i))
+                    .collect();
+                for made in fresh {
+                    match places.get(&made.0) {
+                        Some(&i) => ramps[i] = made,
+                        None => {
+                            places.insert(made.0.clone(), ramps.len());
+                            ramps.push(made);
+                        }
                     }
                 }
                 if keys.len() > self.limits.max_palette_colors {
@@ -1167,4 +1215,12 @@ fn lint_option(token: Token) -> Parsed<()> {
         offset += part.chars().count() + 1;
     }
     Ok(())
+}
+
+/// The error of `errors` that comes first in the text, if any.
+fn first_error<const N: usize>(errors: [Option<&Error>; N]) -> Parsed<()> {
+    match errors.into_iter().flatten().min_by_key(|e| e.position) {
+        Some(e) => Err(e.clone()),
+        None => Ok(()),
+    }
 }
