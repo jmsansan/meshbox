@@ -10,15 +10,16 @@ The first release: voxel models from text to glTF and a preview sheet.
 - The text format: definitions at column 1, blocks indented with spaces, `;`
   comments, `key=value` options, `WxDxH` sizes and `x,y,z` vectors. `Document::parse`
   returns the first error and `check` returns every error, up to 1000, ordered by
-  position, each with a stable code and a 1-based line and column.
-- `palette` with exactly spritebox's syntax, `from=`, `ramp` lines and `lint=`
+  position, each with a stable code and, when it has a place, a 1-based line and
+  column.
+- `palette` with spritebox's syntax, `from=`, `ramp` lines and `lint=`
   included: a file of palettes is valid in both crates, with names of at most 128
   characters. `Document::palette_texture` puts every palette in one RGBA8 image, one
   row per palette and one texel per key, with a UV per key at the texel's center.
 - `voxels NAME WxDxH palette=P [origin=x,y,z] [unit=U]` with `level N` blocks:
   rows from the back (-Z) to the front (+Z), columns along +X, levels up +Y.
-- A PNG encoder of the crate's own: indexed (1 to 8 bits, with `tRNS`) for up to 256
-  colors and RGBA8 otherwise, with no metadata chunks.
+- A PNG encoder of the crate's own: indexed (1 to 8 bits, with `tRNS` when a color
+  is not opaque) for up to 256 colors and RGBA8 otherwise, with no metadata chunks.
 - Greedy meshing: `Document::mesh` gives a `Mesh` of positions, normals, UVs and
   `u32` indices, counter-clockwise, opaque triangles first and translucent ones after
   `translucent_start`. Faces between two opaque voxels, or two voxels of one
@@ -42,7 +43,8 @@ The first release: voxel models from text to glTF and a preview sheet.
   `check_file_with_loader` for text with a name of its own; nothing touches the file
   system unless the loader does. Names resolve against the importing file's
   directory, the same on every platform; cycles are `cycle`, depth past
-  `max_nesting` is `limit_exceeded`, and an error in an imported file names it.
+  `max_nesting` (counted where a file is first reached) is `limit_exceeded`, and an
+  error in an imported file names it.
   `Document::export_models_with` and `preview_models_with` take a subset of the
   models.
 - The `meshbox` command: `check <file> [--json]` and

@@ -13,8 +13,9 @@ that engines and Blender open, and renders a preview sheet from four views.
 meshbox is to 3D what [spritebox](https://github.com/jmsansan/spritebox) is to pixel
 art, and it is designed first for **AI-assisted authoring**: an assistant cannot model
 with a mouse, but it can write precise text, render it, look at the preview and
-correct the text. Every diagnostic has a line, a column and a stable code, and the
-same text gives the same bytes on every platform.
+correct the text. Every diagnostic has a stable code, and a line and column when it
+concerns a place in the text, and the same text gives the same bytes on every
+platform.
 
 **meshbox has zero dependencies.** It uses nothing but the Rust standard library: it
 has its own PNG encoder, JSON and glTF writers, and software rasterizer, and it builds
@@ -104,9 +105,9 @@ palette autumn from=forest
 
 A palette maps one-character keys to `#rrggbb`, `#rrggbbaa` or `transparent`.
 `from=` copies another palette's keys, then replaces or adds its own. The syntax is
-exactly spritebox's, `ramp` lines and `lint=` included, so **a file holding only
-palettes is valid in both crates**, and a game's 2D and 3D art can share one palette
-file. meshbox reads nothing else of spritebox's: a `sprite` in a meshbox file is an
+spritebox's, `ramp` lines and `lint=` included, so **a file holding only palettes
+is valid in both crates** (names here are at most 128 characters), and a game's 2D
+and 3D art can share one palette file. meshbox reads nothing else of spritebox's: a `sprite` in a meshbox file is an
 error that names it.
 
 `.` is empty space in a model whatever the palette says, and so is a fully
@@ -160,7 +161,8 @@ unless the loader does. Names resolve the same on every platform: against the
 importing file's directory unless they start with `/`, a drive (`C:/`) or a network
 share (`//server/share`); `\` is `/`; and `.` and `..` are resolved by name, never
 above a root. A drive-relative name such as `C:part.meshbox` is refused. Imports in a
-cycle are an error, and so are imports nested deeper than `max_nesting`.
+cycle are an error, and so is a file first reached through more than `max_nesting`
+imports.
 
 ## Output
 
@@ -234,8 +236,8 @@ meshbox render <file> --out <dir> [--scale <n>] [--model <name>] [--json]
 
 - `check` prints each diagnostic as `file:line:column: error[code]: message` on
   standard error (`file: error[code]: message` when it has no place), or one JSON
-  object on standard output with `--json`: `version`, `file` (absent for bad usage),
-  `ok`, `diagnostics` (each with `code`, `severity`, `message`, `line` and `column`
+  object on standard output with `--json`: `version`, `file` (absent when the
+  arguments cannot be read), `ok`, `diagnostics` (each with `code`, `severity`, `message`, `line` and `column`
   when it has a place, and `file` for an imported file) and `written`.
 - `render` writes `model-NAME.glb` for each model, `palette.png` (the whole
   document's palette texture), `preview.png` and `meshbox.json`, which lists each
@@ -243,7 +245,8 @@ meshbox render <file> --out <dir> [--scale <n>] [--model <name>] [--json]
   limits the glb files, the preview and the manifest to one model. Nothing is
   written when the file has errors or an output does not fit the limits; if a write
   fails, the files written before it stay and `written` lists them. `--scale` is the
-  preview's pixels per voxel, 1 to 32 (default 8).
+  preview's pixels per voxel in the front, right and top views, 1 to 32 (default 8);
+  the 3/4 view is drawn a quarter larger.
 - `<file>` may be `-` for standard input, whose imports are read relative to the
   current directory; a file's imports are read relative to the file.
 - Exit statuses: 0 success; 1 the file has errors, or what is asked of it cannot be
@@ -254,8 +257,8 @@ meshbox render <file> --out <dir> [--scale <n>] [--model <name>] [--json]
 
 `Document::parse` returns the first error; `meshbox::check` returns every error, up
 to 1000, ordered by position. Each `Error` has a stable `code`, a `message`, a
-1-based `position` (line, and column counted in characters) and, for an error in an
-imported file, that file's name. The codes and their JSON names:
+1-based `position` when it concerns a place (line, and column counted in characters)
+and, for an error in an imported file, that file's name. The codes and their JSON names:
 
 | Code | JSON | Meaning |
 | --- | --- | --- |
@@ -272,8 +275,8 @@ imported file, that file's name. The codes and their JSON names:
 ## Limits
 
 `Limits` bounds the work any input can cause. The functions with `_with` in their
-names take one, and
-the others (`Document::parse`, `check` and so on) use the defaults, which suit hand-written files and untrusted input. Parsing takes memory in
+names take one, and the others (`Document::parse`, `check` and so on) use the
+defaults, which suit hand-written files and untrusted input. Parsing takes memory in
 proportion to the text, which `max_text_bytes` bounds, and keeps the first 1000
 errors by position.
 
@@ -288,7 +291,7 @@ errors by position.
 | `max_vertices` | 4194304 | Vertices of all meshes together |
 | `max_image_side` | 8192 | Side of any image created |
 | `max_image_pixels` | 16777216 | Pixels of any image created |
-| `max_nesting` | 32 | Depth of `from=` chains and imports |
+| `max_nesting` | 32 | Depth of `from=` chains, and of imports to reach a file the first time |
 
 ## Limitations
 
