@@ -22,7 +22,10 @@ fn readme_meshbox_blocks_are_valid() {
             None => {}
         }
     }
-    assert!(current.is_none(), "a meshbox block of the README is not closed");
+    assert!(
+        current.is_none(),
+        "a meshbox block of the README is not closed"
+    );
     assert!(blocks.len() >= 2, "the README has meshbox examples");
     for block in &blocks {
         assert_eq!(check(block), [], "{block}");

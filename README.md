@@ -155,9 +155,10 @@ import palettes.meshbox
 import "art/props.meshbox"
 ```
 
-`import NAME` brings in another file's definitions; the name may be quoted, but has no
-spaces. The caller's loader reads it (see below), so nothing touches the file system
-unless the loader does. Names resolve the same on every platform: against the
+`import NAME` brings in another file's definitions; the name may be quoted, and is one
+token, as everywhere in the format (spaces split it outside parentheses). The
+caller's loader reads it (see below), so nothing touches the file system unless the
+loader does. Names resolve the same on every platform: against the
 importing file's directory unless they start with `/`, a drive (`C:/`) or a network
 share (`//server/share`); `\` is `/`; and `.` and `..` are resolved by name, never
 above a root. A drive-relative name such as `C:part.meshbox` is refused. Imports in a
@@ -255,10 +256,12 @@ meshbox render <file> --out <dir> [--scale <n>] [--model <name>] [--json]
 
 ## Errors
 
-`Document::parse` returns the first error; `meshbox::check` returns every error, up
-to 1000, ordered by position. Each `Error` has a stable `code`, a `message`, a
-1-based `position` when it concerns a place (line, and column counted in characters)
-and, for an error in an imported file, that file's name. The codes and their JSON names:
+`Document::parse` returns the first error; `meshbox::check` returns the errors it
+finds, up to 1000, ordered by position. A line reports its first fault, and an error
+that only follows from another (a model whose palette failed) is not reported. Each
+`Error` has a stable `code`, a `message`, a 1-based `position` when it concerns a
+place (line, and column counted in characters) and, for an error in an imported file,
+that file's name. The codes and their JSON names:
 
 | Code | JSON | Meaning |
 | --- | --- | --- |
