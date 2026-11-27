@@ -53,7 +53,10 @@ voxels window 3x1x3 palette=forest origin=1.5,0,0.5
 
 fn main() -> Result<(), meshbox::Error> {
     let document = meshbox::Document::parse(TEXT)?;
-    let files = document.glb_files()?;
+    let files = document
+        .export()?
+        .glb_files()
+        .collect::<Result<Vec<_>, _>>()?;
     let out = std::env::args().nth(1);
     for (name, bytes) in &files {
         println!("{name}: {} bytes", bytes.len());

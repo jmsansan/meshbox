@@ -5,6 +5,11 @@
 //! output depends only on the model: rectangles come in a fixed order (axis, then
 //! direction, then plane, then row), and positions are computed with exactly rounded
 //! `f32` operations, so the same text gives the same bytes on every platform.
+//!
+//! Greedy meshing is fast, not optimal: some shapes take a rectangle or two more than
+//! the fewest possible. Where a large rectangle meets two small ones, their shared
+//! edge has a T-junction; every corner sits exactly on whole voxels, so the surface
+//! has no cracks, and each unit length of edge is used once in each direction.
 
 use crate::mesh::Mesh;
 use crate::palette::{Palette, PaletteTexture};

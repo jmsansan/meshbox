@@ -178,8 +178,20 @@ fn an_empty_model_is_a_node_without_a_mesh() {
 
 #[test]
 fn the_same_document_gives_the_same_bytes() {
-    let a = Document::parse(TEXT).unwrap().glb_files().unwrap();
-    let b = Document::parse(TEXT).unwrap().glb_files().unwrap();
+    let a = Document::parse(TEXT)
+        .unwrap()
+        .export()
+        .unwrap()
+        .glb_files()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let b = Document::parse(TEXT)
+        .unwrap()
+        .export()
+        .unwrap()
+        .glb_files()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     assert_eq!(a, b);
     let names: Vec<&str> = a.iter().map(|(n, _)| n.as_str()).collect();
     assert_eq!(
@@ -187,4 +199,47 @@ fn the_same_document_gives_the_same_bytes() {
         ["model-block.glb", "model-solid.glb", "model-empty.glb"]
     );
     assert_eq!(a[0].1, Document::parse(TEXT).unwrap().glb("block").unwrap());
+}
+
+#[test]
+fn an_export_shares_one_palette_png() {
+    let document = Document::parse(TEXT).unwrap();
+    let export = document.export().unwrap();
+    let texture = document.palette_texture().unwrap().unwrap();
+    assert_eq!(
+        export.palette_png().unwrap(),
+        meshbox::png::encode(texture.image())
+    );
+    let names: Vec<&str> = export.meshes().map(|(n, _)| n).collect();
+    assert_eq!(names, ["block", "solid", "empty"]);
+    assert_eq!(
+        export.meshes().next().unwrap().1,
+        &document.mesh("block").unwrap()
+    );
+}
+
+#[test]
+fn origins_and_units_keep_positions_finite() {
+    for header in [
+        "origin=100000000000000000000,0,0",
+        "origin=0,65537,0",
+        "unit=100000000000000000000",
+        "unit=2000",
+        "unit=0.00000001",
+    ] {
+        let text = format!("palette p\n  a #ffffff\nvoxels m 1x1x1 palette=p {header}\n");
+        let errors = meshbox::check(&text);
+        assert_eq!(errors.len(), 1, "{header}");
+        assert_eq!(
+            errors[0].code,
+            meshbox::ErrorCode::InvalidArgument,
+            "{header}"
+        );
+    }
+    assert!(
+        meshbox::check(
+            "palette p\n  a #ffffff\nvoxels m 1x1x1 palette=p origin=65536,0,-65536 unit=1024\n"
+        )
+        .is_empty()
+    );
 }

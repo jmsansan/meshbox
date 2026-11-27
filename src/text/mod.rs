@@ -22,6 +22,12 @@ const MAX_OPTIONS: usize = 16;
 /// rule of palettes that spritebox does not share: it takes longer names.
 const MAX_NAME: usize = 128;
 
+/// The largest origin coordinate, in voxels.
+const MAX_ORIGIN: f32 = 65536.0;
+/// The smallest and largest side of a voxel, in meters.
+const MIN_UNIT: f32 = 1.0 / 65536.0;
+const MAX_UNIT: f32 = 1024.0;
+
 /// Directives of spritebox that meshbox does not read (#7).
 const SPRITEBOX_DIRECTIVES: &[&str] = &[
     "sprite",
@@ -647,8 +653,39 @@ impl<'a> Parser<'a, '_> {
                 .end_error("Expected `palette=NAME`: the palette of the model's keys".to_owned())
         });
         let palette_name = palette.clone().and_then(|p| check_name(p).map(|_| p));
-        let origin = header.option("origin").map(vector).transpose();
-        let unit = header.option("unit").map(length).transpose();
+        // Bounded so that every position is finite and keeps 1/256 of a voxel of
+        // precision in `f32`.
+        let origin = header
+            .option("origin")
+            .map(|t| {
+                let v = vector(t)?;
+                if v.iter().any(|c| c.abs() > MAX_ORIGIN) {
+                    return Err(t.error(
+                        ErrorCode::InvalidArgument,
+                        format!(
+                            "An origin is within {MAX_ORIGIN} voxels of the model on each axis"
+                        ),
+                    ));
+                }
+                Ok(v)
+            })
+            .transpose();
+        let unit = header
+            .option("unit")
+            .map(|t| {
+                let u = length(t)?;
+                if !(MIN_UNIT..=MAX_UNIT).contains(&u) {
+                    return Err(t.error(
+                        ErrorCode::InvalidArgument,
+                        format!(
+                            "A voxel's side is 1/65536 to {MAX_UNIT} meters, not `{}`",
+                            t.text
+                        ),
+                    ));
+                }
+                Ok(u)
+            })
+            .transpose();
         let rest = header.finish("voxel model", "`palette=`, `origin=` or `unit=`");
         let first = first_error([
             palette_name.as_ref().err(),

@@ -25,7 +25,7 @@ pub mod png;
 mod text;
 mod voxel;
 
-pub use document::{Document, check, check_with};
+pub use document::{Document, Export, check, check_with};
 pub use error::{Error, ErrorCode, Position, Result};
 pub use image::{Color, Image};
 pub use limits::Limits;

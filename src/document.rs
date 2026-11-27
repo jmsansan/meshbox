@@ -95,18 +95,19 @@ impl Document {
         )
     }
 
-    /// Every model as binary glTF, `model-NAME.glb`, in definition order, within
-    /// the default [`Limits`]. The vertex limit counts all the models together.
-    pub fn glb_files(&self) -> Result<Vec<(String, Vec<u8>)>> {
-        self.glb_files_with(&Limits::default())
+    /// Every model meshed, with the palette texture encoded once, within the default
+    /// [`Limits`]: what [`Export::glb_files`] writes from. The vertex limit counts all
+    /// the models together.
+    pub fn export(&self) -> Result<Export> {
+        self.export_with(&Limits::default())
     }
 
-    /// Every model as binary glTF, within `limits`.
-    pub fn glb_files_with(&self, limits: &Limits) -> Result<Vec<(String, Vec<u8>)>> {
+    /// Every model meshed, within `limits`.
+    pub fn export_with(&self, limits: &Limits) -> Result<Export> {
         let texture = self.palette_texture_with(limits)?;
         let png = texture.as_ref().map(|t| png::encode(t.image()));
         let mut vertices = 0;
-        let mut files = Vec::with_capacity(self.models.len());
+        let mut models = Vec::with_capacity(self.models.len());
         for model in &self.models {
             let mesh = mesher::mesh(
                 model,
@@ -115,16 +116,9 @@ impl Document {
                 limits,
                 &mut vertices,
             )?;
-            let bytes = gltf::glb(
-                &[gltf::Part {
-                    name: &model.name,
-                    mesh: &mesh,
-                }],
-                png.as_deref(),
-            )?;
-            files.push((format!("model-{}.glb", model.name), bytes));
+            models.push((model.name.clone(), mesh));
         }
-        Ok(files)
+        Ok(Export { models, png })
     }
 
     fn find(&self, name: &str) -> Result<&VoxelModel> {
@@ -150,5 +144,47 @@ pub fn check_with(text: &str, limits: &Limits) -> Vec<Error> {
     match text::parse(text, limits) {
         Ok(_) => Vec::new(),
         Err(errors) => errors,
+    }
+}
+
+/// A document's models meshed and its palette texture encoded, ready to write.
+///
+/// ```
+/// let document = meshbox::Document::parse(
+///     "palette p\n  r #ff0000\nvoxels dot 1x1x1 palette=p\n  level 0\n    r\n",
+/// )?;
+/// let export = document.export()?;
+/// for file in export.glb_files() {
+///     let (name, bytes) = file?;
+///     assert_eq!(name, "model-dot.glb");
+///     assert_eq!(&bytes[..4], b"glTF");
+/// }
+/// # Ok::<(), meshbox::Error>(())
+/// ```
+#[derive(Clone, Debug)]
+pub struct Export {
+    models: Vec<(String, Mesh)>,
+    png: Option<Vec<u8>>,
+}
+
+impl Export {
+    /// Each model's name and mesh, in definition order.
+    pub fn meshes(&self) -> impl Iterator<Item = (&str, &Mesh)> {
+        self.models.iter().map(|(n, m)| (n.as_str(), m))
+    }
+
+    /// The palette texture as PNG, if the document has one.
+    pub fn palette_png(&self) -> Option<&[u8]> {
+        self.png.as_deref()
+    }
+
+    /// Each model as binary glTF, `model-NAME.glb`, in definition order. Each file is
+    /// built when the iterator reaches it, so that writing them one by one keeps one
+    /// in memory at a time.
+    pub fn glb_files(&self) -> impl Iterator<Item = Result<(String, Vec<u8>)>> + '_ {
+        self.models.iter().map(|(name, mesh)| {
+            let bytes = gltf::glb(&[gltf::Part { name, mesh }], self.png.as_deref())?;
+            Ok((format!("model-{name}.glb"), bytes))
+        })
     }
 }
