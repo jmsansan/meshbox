@@ -155,6 +155,16 @@ pub(crate) fn quads(
                         if (opaque.len() + clear.len()) as u64 >= max {
                             return None;
                         }
+                        // Growth that the platform cannot allocate ends meshing as a
+                        // limit, never a panic.
+                        let list = if translucent[cell as usize] {
+                            &mut clear
+                        } else {
+                            &mut opaque
+                        };
+                        if list.try_reserve(1).is_err() {
+                            return None;
+                        }
                         if translucent[cell as usize] {
                             clear.push(quad);
                         } else {
