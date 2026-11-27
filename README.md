@@ -257,16 +257,16 @@ meshbox render <file> --out <dir> [--scale <n>] [--model <name>] [--json]
 ## Errors
 
 `Document::parse` returns the first error; `meshbox::check` returns the errors it
-finds, up to 1000, ordered by position. A line reports its first fault, and an error
-that only follows from another (a model whose palette failed) is not reported. Each
-`Error` has a stable `code`, a `message`, a 1-based `position` when it concerns a
-place (line, and column counted in characters) and, for an error in an imported file,
-that file's name. The codes and their JSON names:
+finds, up to 1000, ordered by position. A definition's header reports its first fault,
+and an error that only follows from another (a model whose palette failed) is not
+reported. Each `Error` has a stable `code`, a `message`, a 1-based `position` when it
+concerns a place (line, and column counted in characters) and, for an error in an
+imported file, that file's name. The codes and their JSON names:
 
 | Code | JSON | Meaning |
 | --- | --- | --- |
 | `Syntax` | `syntax` | Malformed text: an unknown directive, a missing value, bad indentation |
-| `InvalidArgument` | `invalid_argument` | A value of the right shape but out of range |
+| `InvalidArgument` | `invalid_argument` | A value that is not valid: out of range, or malformed such as the color `#ff00` |
 | `UnknownName` | `unknown_name` | A palette, model or key that is not defined |
 | `DuplicateName` | `duplicate_name` | A second definition of a name |
 | `SizeMismatch` | `size_mismatch` | A grid whose rows or columns do not match the size |

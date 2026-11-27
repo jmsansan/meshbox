@@ -9,7 +9,7 @@ The first release: voxel models from text to glTF and a preview sheet.
   check that meshbox has no dependencies.
 - The text format: definitions at column 1, blocks indented with spaces, `;`
   comments, `key=value` options, `WxDxH` sizes and `x,y,z` vectors. `Document::parse`
-  returns the first error and `check` the errors it finds (a line's first fault, and
+  returns the first error and `check` the errors it finds (a header's first fault, and
   none that only follows from another), up to 1000, ordered by position, each with a
   stable code and, when it has a place, a 1-based line and column.
 - `palette` with spritebox's syntax, `from=`, `ramp` lines and `lint=`
@@ -26,10 +26,11 @@ The first release: voxel models from text to glTF and a preview sheet.
   translucent key, are dropped, and faces of one key and direction in a plane are
   merged into rectangles, in a fixed order, so the same text gives the same bytes on
   every platform. `Mesh::stats` and `Mesh::bounds`.
-- Binary glTF: `Document::glb`, and `Document::export` with `Export::glb_files`, write
-  a file per model with one scene and one node at its origin and, when the model has
-  faces, the palette texture embedded as PNG with nearest sampling and clamped edges,
-  an opaque material for opaque keys and a blended one for translucent keys.
+- Binary glTF: `Document::glb`, and `Document::export` with `Export::glb_files`,
+  give a file per model, as bytes, with one scene and one node at its origin and,
+  when the model has faces, the palette texture embedded as PNG with nearest sampling
+  and clamped edges, an opaque material for opaque keys and a blended one for
+  translucent keys.
 - `examples/embedded.rs`: glb files from text compiled into the program.
 - Preview sheets: `Document::preview` draws each model from the front, the right, the
   top and a 3/4 view, with its name and size above, using a fixed-point CPU

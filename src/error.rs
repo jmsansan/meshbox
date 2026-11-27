@@ -10,7 +10,8 @@ use std::fmt;
 pub enum ErrorCode {
     /// Malformed text: an unknown directive, a missing value, bad indentation.
     Syntax,
-    /// A value of the right shape but out of range, such as a color or a size.
+    /// A value that is not valid: out of range, as a size, or malformed, as the color
+    /// `#ff00`.
     InvalidArgument,
     /// A reference to a palette, model or palette key that is not defined.
     UnknownName,
