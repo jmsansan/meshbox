@@ -24,6 +24,9 @@ const MAX_NAME: usize = 128;
 
 /// The largest origin coordinate, in voxels.
 const MAX_ORIGIN: f32 = 65536.0;
+/// The largest side, in voxels: with an origin within [`MAX_ORIGIN`], every corner's
+/// distance from it is below 2^23, which `f32` holds exactly.
+const MAX_EXACT_SIDE: u32 = (1 << 23) - 65536;
 /// The smallest and largest side of a voxel, in meters.
 const MIN_UNIT: f32 = 1.0 / 65536.0;
 const MAX_UNIT: f32 = 1024.0;
@@ -645,7 +648,13 @@ impl<'a> Parser<'a, '_> {
                 format!("Unexpected `{}` after the model's size", extra.text),
             ));
         }
-        let size: [u32; 3] = size(size_token, self.limits.max_voxel_side, "5x5x4")?;
+        // Sides are bounded too so that, with any origin, every corner is a whole number
+        // that `f32` holds exactly, whatever the limits allow.
+        let size: [u32; 3] = size(
+            size_token,
+            self.limits.max_voxel_side.min(MAX_EXACT_SIDE),
+            "5x5x4",
+        )?;
         // The options are checked together and the first error in the text is the one
         // reported, whatever order they are written in.
         let palette = header.option("palette").ok_or_else(|| {
@@ -906,6 +915,8 @@ impl<'a> Parser<'a, '_> {
                 continue;
             }
             let keys: Vec<char> = palette.keys.iter().map(|&(k, _)| k).collect();
+            let slots: HashMap<char, usize> =
+                keys.iter().enumerate().map(|(i, &k)| (k, i)).collect();
             let [w, d, _] = def.size;
             let mut cells = vec![0u16; def.size.iter().map(|&s| s as usize).product()];
             let mut ok = true;
@@ -915,7 +926,7 @@ impl<'a> Parser<'a, '_> {
                         if key == '.' {
                             continue;
                         }
-                        let Some(k) = keys.iter().position(|&c| c == key) else {
+                        let Some(&k) = slots.get(&key) else {
                             // Past the cap, the message is not even formatted.
                             if self.errors.keeps(Some(row.at(x))) {
                                 self.errors.push(Error::at(

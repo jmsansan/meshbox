@@ -282,3 +282,43 @@ fn tall_models_index_without_overflow() {
     assert_eq!(m.voxel(1, 2, 0), Some('a'));
     assert_eq!(m.voxel(0, u32::MAX, 0), None);
 }
+
+#[test]
+fn large_models_parse_quickly() {
+    // 256 × 256 × 60 voxels of the last key of a 256-key palette.
+    let mut text = String::from("palette p\n");
+    let keys: Vec<char> = (0..256u32)
+        .map(|i| char::from_u32(0x1_0000 + i).unwrap())
+        .collect();
+    for k in &keys {
+        text.push_str(&format!("  {k} #808080\n"));
+    }
+    text.push_str("voxels m 256x256x15 palette=p\n");
+    let row: String = std::iter::repeat_n(keys[255], 256).collect();
+    for y in 0..15 {
+        text.push_str(&format!("  level {y}\n"));
+        for _ in 0..256 {
+            text.push_str(&format!("    {row}\n"));
+        }
+    }
+    let start = std::time::Instant::now();
+    assert!(check(&text).is_empty());
+    assert!(
+        start.elapsed() < std::time::Duration::from_secs(20),
+        "{:?}",
+        start.elapsed()
+    );
+}
+
+#[test]
+fn sides_stay_exact_in_f32_whatever_the_limits() {
+    let limits = Limits {
+        max_voxel_side: u32::MAX,
+        max_voxels: u64::MAX,
+        ..Limits::default()
+    };
+    let text = "palette p\n  a #ffffff\nvoxels tall 1x1x16711681 palette=p\n";
+    let errors = check_with(text, &limits);
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].code, ErrorCode::LimitExceeded);
+}
