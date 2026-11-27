@@ -1,0 +1,20 @@
+[package]
+name = "meshbox"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["Jose Sanchez <jose.sansan@proton.me>"]
+description = "Low-poly and voxel 3D models from plain text: stacked voxel grids meshed to binary glTF, with a palette texture and a four-view preview sheet. A zero-dependency Rust library and CLI designed for AI-assisted authoring."
+license = "MIT"
+repository = "https://github.com/jmsansan/meshbox"
+documentation = "https://docs.rs/meshbox"
+readme = "README.md"
+keywords = ["3d", "voxel", "gltf", "gamedev", "mesh"]
+categories = ["game-development", "graphics", "rendering::data-formats", "command-line-utilities"]
+include = ["/Cargo.toml", "/Cargo.lock", "/src/**", "/tests/**", "/examples/*.rs", "/examples/*.meshbox", "/docs/*.png", "/README.md", "/CHANGELOG.md", "/LICENSE"]
+
+[dependencies]
+
+[[bin]]
+name = "meshbox"
+path = "src/main.rs"
