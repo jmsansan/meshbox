@@ -132,11 +132,11 @@ fn lex_line<'a>(
     while let Some(&(_, c)) = chars.peek() {
         if c == ' ' {
             indent += 1;
-        } else if c == '\t' {
+        } else if c.is_whitespace() {
             errors.push(Error::at(
                 Position::in_file(file, number, column),
                 ErrorCode::Syntax,
-                "Indent with spaces, not tabs",
+                "Indent with spaces, not tabs or other blank characters",
             ));
             return None;
         } else {

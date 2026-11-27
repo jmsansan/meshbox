@@ -68,7 +68,10 @@ fn model_errors_have_codes_and_positions() {
         codes(&format!(
             "{p}voxels m 2x2x1 palette=p\n  level 0\n    aaa\n    a\n"
         )),
-        [(5, 7, ErrorCode::SizeMismatch)]
+        [
+            (5, 7, ErrorCode::SizeMismatch),
+            (6, 6, ErrorCode::SizeMismatch)
+        ]
     );
     assert_eq!(
         codes(&format!(
@@ -164,4 +167,47 @@ fn sizes_past_the_limits_are_refused_before_allocation() {
     // Huge sides are a limit error, not an overflow.
     let text = format!("{p}voxels m 99999999999999999999x1x1 palette=p\n");
     assert_eq!(codes(&text), [(3, 10, ErrorCode::LimitExceeded)]);
+}
+
+#[test]
+fn every_row_of_a_level_is_checked() {
+    let p = "palette p\n  a #ffffff\n";
+    assert_eq!(
+        codes(&format!(
+            "{p}voxels m 2x2x1 palette=p\n  level 0\n    a\n    az\n"
+        )),
+        [
+            (5, 6, ErrorCode::SizeMismatch),
+            (6, 6, ErrorCode::UnknownName)
+        ]
+    );
+}
+
+#[test]
+fn huge_raised_sides_do_not_overflow() {
+    let limits = Limits {
+        max_voxel_side: u32::MAX,
+        ..Limits::default()
+    };
+    let text = "palette p\n  a #ffffff\nvoxels m 4194304x2097152x2097152 palette=p\n";
+    let errors = check_with(text, &limits);
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].code, ErrorCode::LimitExceeded);
+}
+
+#[test]
+fn palettes_too_large_for_a_model_are_refused() {
+    let limits = Limits {
+        max_palette_colors: 70_000,
+        ..Limits::default()
+    };
+    let mut text = String::from("palette p\n");
+    for i in 0..65_536u32 {
+        let c = char::from_u32(0x1_0000 + i).unwrap();
+        text.push_str(&format!("  {c} #ffffff\n"));
+    }
+    text.push_str("voxels m 1x1x1 palette=p\n");
+    let errors = check_with(&text, &limits);
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].code, ErrorCode::LimitExceeded);
 }

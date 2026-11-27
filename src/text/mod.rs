@@ -14,6 +14,9 @@ type Parsed<T> = Result<T, Error>;
 
 const DIRECTIVES: &str = "`palette` or `voxels`";
 
+/// More options than any directive takes, so that checking for duplicates stays cheap.
+const MAX_OPTIONS: usize = 16;
+
 /// Directives of spritebox that meshbox does not read (#7).
 const SPRITEBOX_DIRECTIVES: &[&str] = &[
     "sprite",
@@ -91,7 +94,11 @@ struct PaletteDef<'a> {
     name: Token<'a>,
     from: Option<Token<'a>>,
     colors: Vec<(char, Color)>,
+    ramps: Vec<RampDef<'a>>,
 }
+
+/// A `ramp` line: its name, and its keys with their positions.
+type RampDef<'a> = (Token<'a>, Vec<(char, Position)>);
 
 /// A voxel model as written, before its keys are looked up in its palette.
 struct ModelDef<'a> {
@@ -101,7 +108,7 @@ struct ModelDef<'a> {
     origin: Option<[f32; 3]>,
     unit: f32,
     /// For each level that is written: its height and its rows.
-    levels: Vec<(u32, Vec<Token<'a>>)>,
+    levels: Vec<(u32, Vec<(usize, Token<'a>)>)>,
 }
 
 struct Parser<'a, 'l> {
@@ -141,6 +148,12 @@ impl<'a> Header<'a> {
                         text: value,
                         pos: token.at(key.chars().count() + 1),
                     };
+                    if options.len() == MAX_OPTIONS {
+                        return Err(token.error(
+                            ErrorCode::Syntax,
+                            format!("More than {MAX_OPTIONS} options"),
+                        ));
+                    }
                     if options.iter().any(|(k, _): &(Token, Token)| k.text == key) {
                         return Err(token
                             .error(ErrorCode::Syntax, format!("Option `{key}` is given twice")));
@@ -362,7 +375,7 @@ impl<'a> Parser<'a, '_> {
         let name = header.name;
         header.finish("palette", "`from=`")?;
         let mut colors: Vec<(char, Color)> = Vec::new();
-        let mut ramps: Vec<(Token<'a>, Vec<char>)> = Vec::new();
+        let mut ramps: Vec<RampDef<'a>> = Vec::new();
         for child in &node.children {
             let result = if child.keyword() == "ramp" {
                 self.ramp(child, name, &mut colors, &mut ramps)
@@ -373,7 +386,12 @@ impl<'a> Parser<'a, '_> {
                 self.errors.push(e);
             }
         }
-        self.palettes.push(PaletteDef { name, from, colors });
+        self.palettes.push(PaletteDef {
+            name,
+            from,
+            colors,
+            ramps,
+        });
         Ok(())
     }
 
@@ -432,7 +450,7 @@ impl<'a> Parser<'a, '_> {
         node: &Node<'a>,
         palette: Token<'a>,
         colors: &mut Vec<(char, Color)>,
-        ramps: &mut Vec<(Token<'a>, Vec<char>)>,
+        ramps: &mut Vec<RampDef<'a>>,
     ) -> Parsed<()> {
         let tokens = &node.line.tokens;
         let usage = "write `ramp NAME KEYS`, such as `ramp skin abcd`, dark to light";
@@ -514,7 +532,7 @@ impl<'a> Parser<'a, '_> {
                     format!("Key `{key}` is twice in ramp `{}`", name.text),
                 ));
             }
-            if let Some((other, _)) = ramps.iter().find(|(_, k)| k.contains(&key)) {
+            if let Some((other, _)) = ramps.iter().find(|(_, k)| k.iter().any(|&(c, _)| c == key)) {
                 return Err(Error::at(
                     pos,
                     ErrorCode::DuplicateName,
@@ -581,7 +599,7 @@ impl<'a> Parser<'a, '_> {
                 colors.push((key, color));
             }
         }
-        ramps.push((name, written.iter().map(|&(k, _)| k).collect()));
+        ramps.push((name, written));
         Ok(())
     }
 
@@ -611,8 +629,14 @@ impl<'a> Parser<'a, '_> {
         };
         header.finish("voxel model", "`palette=`, `origin=` or `unit=`")?;
         // The voxels are counted, and refused, before memory for them is allocated.
-        let cells = size.iter().map(|&s| s as u64).product::<u64>();
-        self.voxels += cells;
+        let cells = size.iter().fold(0u64, |acc, &s| {
+            if acc == 0 {
+                s as u64
+            } else {
+                acc.saturating_mul(s as u64)
+            }
+        });
+        self.voxels = self.voxels.saturating_add(cells);
         if self.voxels > self.limits.max_voxels {
             return Err(size_token.error(
                 ErrorCode::LimitExceeded,
@@ -623,7 +647,7 @@ impl<'a> Parser<'a, '_> {
             ));
         }
         let [width, depth, height] = size;
-        let mut levels: Vec<(u32, Vec<Token<'a>>)> = Vec::new();
+        let mut levels: Vec<(u32, Vec<(usize, Token<'a>)>)> = Vec::new();
         let mut level_lines: Vec<(u32, Position)> = Vec::new();
         for child in &node.children {
             let tokens = &child.line.tokens;
@@ -684,10 +708,8 @@ impl<'a> Parser<'a, '_> {
                 continue;
             }
             level_lines.push((y, number.pos));
-            match self.level(child, width, depth) {
-                Ok(rows) => levels.push((y, rows)),
-                Err(e) => self.errors.push(e),
-            }
+            let rows = self.level(child, width, depth);
+            levels.push((y, rows));
         }
         self.models.push(ModelDef {
             name,
@@ -700,51 +722,57 @@ impl<'a> Parser<'a, '_> {
         Ok(())
     }
 
-    /// The rows of a level: `depth` rows of `width` keys.
-    fn level(&mut self, node: &Node<'a>, width: u32, depth: u32) -> Parsed<Vec<Token<'a>>> {
+    /// The rows of a level, `depth` rows of `width` keys, each with its `z`. Errors go
+    /// to `self.errors`, and only the rows of the right width are returned, so that
+    /// their keys are still checked.
+    fn level(&mut self, node: &Node<'a>, width: u32, depth: u32) -> Vec<(usize, Token<'a>)> {
         let mut rows = Vec::new();
+        let mut count = 0;
         for child in &node.children {
             let tokens = &child.line.tokens;
-            if let Some(extra) = tokens.get(1) {
-                return Err(extra.error(
-                    ErrorCode::Syntax,
-                    "A row of voxels is one word of keys, without spaces",
-                ));
-            }
-            no_children(child, "a row of voxels")?;
-            let row = tokens[0];
-            let count = row.text.chars().count();
-            if count != width as usize {
-                let at = if count > width as usize {
-                    row.at(width as usize)
-                } else {
-                    row.end()
-                };
-                return Err(Error::at(
-                    at,
-                    ErrorCode::SizeMismatch,
-                    format!("A row has {count} voxels; the model is {width} wide"),
-                ));
-            }
-            if rows.len() == depth as usize {
-                return Err(row.error(
+            count += 1;
+            if count == depth as usize + 1 {
+                self.errors.push(tokens[0].error(
                     ErrorCode::SizeMismatch,
                     format!("A level has more than {depth} rows; the model is {depth} deep"),
                 ));
             }
-            rows.push(row);
+            if let Some(extra) = tokens.get(1) {
+                self.errors.push(extra.error(
+                    ErrorCode::Syntax,
+                    "A row of voxels is one word of keys, without spaces",
+                ));
+                continue;
+            }
+            if let Err(e) = no_children(child, "a row of voxels") {
+                self.errors.push(e);
+            }
+            let row = tokens[0];
+            let length = row.text.chars().count();
+            if length != width as usize {
+                let at = if length > width as usize {
+                    row.at(width as usize)
+                } else {
+                    row.end()
+                };
+                self.errors.push(Error::at(
+                    at,
+                    ErrorCode::SizeMismatch,
+                    format!("A row has {length} voxels; the model is {width} wide"),
+                ));
+                continue;
+            }
+            if count <= depth as usize {
+                rows.push((count - 1, row));
+            }
         }
-        if rows.len() != depth as usize {
-            let level = node.line.first();
-            return Err(level.error(
+        if count < depth as usize {
+            self.errors.push(node.line.first().error(
                 ErrorCode::SizeMismatch,
-                format!(
-                    "The level has {} rows; the model is {depth} deep",
-                    rows.len()
-                ),
+                format!("The level has {count} rows; the model is {depth} deep"),
             ));
         }
-        Ok(rows)
+        rows
     }
 
     /// Resolves palettes, then models; errors go to `self.errors`.
@@ -783,12 +811,24 @@ impl<'a> Parser<'a, '_> {
                 continue;
             };
             let palette = &kept[p];
+            // Cells hold a key's index plus one in 16 bits.
+            if palette.keys.len() >= u16::MAX as usize {
+                self.errors.push(def.palette.error(
+                    ErrorCode::LimitExceeded,
+                    format!(
+                        "Palette `{}` has more than {} keys, the most a model can use",
+                        palette.name,
+                        u16::MAX - 1
+                    ),
+                ));
+                continue;
+            }
             let keys: Vec<char> = palette.keys.iter().map(|&(k, _)| k).collect();
             let [w, d, _] = def.size;
             let mut cells = vec![0u16; def.size.iter().map(|&s| s as usize).product()];
             let mut ok = true;
             for (y, rows) in &def.levels {
-                for (z, row) in rows.iter().enumerate() {
+                for &(z, row) in rows {
                     for (x, key) in row.text.chars().enumerate() {
                         if key == '.' {
                             continue;
@@ -833,11 +873,12 @@ impl<'a> Parser<'a, '_> {
         }
     }
 
-    /// Resolves `from=`: a palette starts with the colors of the one it names, then
-    /// replaces or adds its own. Returns `None` for palettes with errors.
+    /// Resolves `from=`: a palette starts with the colors and ramps of the one it
+    /// names, then replaces or adds its own. Returns `None` for palettes with errors.
     fn resolve_palettes(&mut self) -> Vec<Option<Palette>> {
+        let count = self.palettes.len();
         let mut index: HashMap<&str, usize> = HashMap::new();
-        let mut usable = vec![true; self.palettes.len()];
+        let mut state = vec![State::Pending; count];
         for (i, def) in self.palettes.iter().enumerate() {
             if let Some(&first) = index.get(def.name.text) {
                 self.errors.push(duplicate(
@@ -845,24 +886,22 @@ impl<'a> Parser<'a, '_> {
                     "Palette",
                     self.palettes[first].name.pos,
                 ));
-                usable[i] = false;
+                state[i] = State::Failed;
             } else {
                 index.insert(def.name.text, i);
             }
         }
-        let mut resolved: Vec<Option<Palette>> = vec![None; self.palettes.len()];
-        let mut failed = vec![false; self.palettes.len()];
-        for start in 0..self.palettes.len() {
-            if !usable[start] {
-                continue;
-            }
-            // The chain of `from=` from `start` to a palette without one, or to one
-            // already resolved or failed.
+        let mut resolved: Vec<Option<Palette>> = vec![None; count];
+        // How many `from=` steps lead from each resolved palette to one without.
+        let mut depth = vec![0usize; count];
+        for start in 0..count {
+            // The chain of `from=` from `start` to a palette that is resolved, failed,
+            // or copies none; palettes are then resolved from its end back.
             let mut chain = vec![start];
             let mut error = None;
             loop {
-                let current = *chain.last().unwrap_or(&start);
-                if resolved[current].is_some() || failed[current] {
+                let current = chain[chain.len() - 1];
+                if state[current] != State::Pending {
                     break;
                 }
                 let def = &self.palettes[current];
@@ -884,52 +923,100 @@ impl<'a> Parser<'a, '_> {
                     ));
                     break;
                 }
-                if chain.len() > self.limits.max_nesting {
-                    error = Some(from.error(
-                        ErrorCode::LimitExceeded,
-                        format!(
-                            "Palettes copied `from=` more than the limit of {} deep",
-                            self.limits.max_nesting
-                        ),
-                    ));
-                    break;
-                }
                 chain.push(next);
             }
             if let Some(e) = error {
-                if !failed[*chain.last().unwrap_or(&start)] {
-                    self.errors.push(e);
-                }
+                self.errors.push(e);
                 for &i in &chain {
-                    if resolved[i].is_none() {
-                        failed[i] = true;
+                    if state[i] == State::Pending {
+                        state[i] = State::Failed;
                     }
                 }
                 continue;
             }
-            // Resolve from the end of the chain back to `start`.
-            for &i in chain.iter().rev() {
-                if resolved[i].is_some() || failed[i] {
+            for n in (0..chain.len()).rev() {
+                let i = chain[n];
+                if state[i] != State::Pending {
                     continue;
                 }
                 let def = &self.palettes[i];
-                let mut keys: Vec<(char, Color)> = match def.from {
-                    Some(from) => {
-                        let parent = index[from.text];
-                        match &resolved[parent] {
-                            Some(p) => p.keys.clone(),
-                            None => {
-                                failed[i] = true;
-                                continue;
-                            }
+                let parent = def.from.map(|from| index[from.text]);
+                if let Some(p) = parent {
+                    if state[p] == State::Failed {
+                        // The palette copied has errors of its own, reported already.
+                        for &j in &chain[..=n] {
+                            state[j] = State::Failed;
                         }
+                        break;
                     }
-                    None => Vec::new(),
+                    depth[i] = depth[p] + 1;
+                    if depth[i] > self.limits.max_nesting {
+                        self.errors.push(def.from.unwrap_or(def.name).error(
+                            ErrorCode::LimitExceeded,
+                            format!(
+                                "Palettes copied `from=` more than the limit of {} deep",
+                                self.limits.max_nesting
+                            ),
+                        ));
+                        for &j in &chain[..=n] {
+                            state[j] = State::Failed;
+                        }
+                        break;
+                    }
+                }
+                let (mut keys, mut ramps) = match parent.and_then(|p| resolved[p].as_ref()) {
+                    Some(p) => (p.keys.clone(), p.ramps.clone()),
+                    None => (Vec::new(), Vec::new()),
                 };
                 for &(key, color) in &def.colors {
                     match keys.iter_mut().find(|(k, _)| *k == key) {
                         Some(slot) => slot.1 = color,
                         None => keys.push((key, color)),
+                    }
+                }
+                // A ramp of the palette copied is replaced by one of the same name; the
+                // others keep their keys, which no ramp written here may share.
+                let replaced: Vec<&str> = def.ramps.iter().map(|(r, _)| r.text).collect();
+                for (name, ramp_keys) in &def.ramps {
+                    let shared = ramp_keys.iter().find_map(|&(key, pos)| {
+                        ramps
+                            .iter()
+                            .filter(|(r, _)| !replaced.contains(&r.as_str()))
+                            .find(|(_, k)| k.contains(&key))
+                            .map(|(r, _)| (key, pos, r.clone()))
+                    });
+                    if let Some((key, pos, other)) = shared {
+                        self.errors.push(Error::at(
+                            pos,
+                            ErrorCode::DuplicateName,
+                            format!(
+                                "Key `{key}` is in ramp `{other}` already, which palette `{}` copies",
+                                def.name.text
+                            ),
+                        ));
+                        continue;
+                    }
+                    let missing = ramp_keys
+                        .iter()
+                        .find(|(k, _)| !keys.iter().any(|(c, _)| c == k));
+                    if let Some(&(key, pos)) = missing {
+                        self.errors.push(Error::at(
+                            pos,
+                            ErrorCode::UnknownName,
+                            format!(
+                                "Key `{key}` of ramp `{}` is not in palette `{}`",
+                                name.text, def.name.text
+                            ),
+                        ));
+                        continue;
+                    }
+                    let made = (
+                        name.text.to_owned(),
+                        ramp_keys.iter().map(|&(k, _)| k).collect(),
+                    );
+                    match ramps.iter_mut().find(|(r, _)| *r == made.0) {
+                        Some(old) => *old = made,
+                        None => ramps.push(made),
                     }
                 }
                 if keys.len() > self.limits.max_palette_colors {
@@ -942,17 +1029,28 @@ impl<'a> Parser<'a, '_> {
                             self.limits.max_palette_colors
                         ),
                     ));
-                    failed[i] = true;
-                    continue;
+                    for &j in &chain[..=n] {
+                        state[j] = State::Failed;
+                    }
+                    break;
                 }
+                state[i] = State::Resolved;
                 resolved[i] = Some(Palette {
                     name: def.name.text.to_owned(),
                     keys,
+                    ramps,
                 });
             }
         }
         resolved
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum State {
+    Pending,
+    Resolved,
+    Failed,
 }
 
 /// A palette line's key: one character that is not reserved.

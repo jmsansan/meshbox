@@ -10,6 +10,8 @@ use crate::{Color, Image, Limits, Result};
 pub struct Palette {
     pub(crate) name: String,
     pub(crate) keys: Vec<(char, Color)>,
+    /// Each ramp's name and keys, dark to light, inherited ramps first.
+    pub(crate) ramps: Vec<(String, Vec<char>)>,
 }
 
 impl Palette {
@@ -21,20 +23,19 @@ impl Palette {
     pub fn keys(&self) -> &[(char, Color)] {
         &self.keys
     }
+    /// The ramps: each one's name and its keys, dark to light, as spritebox reads them.
+    pub fn ramps(&self) -> &[(String, Vec<char>)] {
+        &self.ramps
+    }
     /// The color of `key`, if the palette has it.
     pub fn color(&self, key: char) -> Option<Color> {
         self.keys.iter().find(|(k, _)| *k == key).map(|&(_, c)| c)
     }
-    /// The keys that have a texel in the palette texture: all but `.`, which is
-    /// empty space in a model whatever its color.
-    pub(crate) fn texel_keys(&self) -> impl Iterator<Item = (char, Color)> + '_ {
-        self.keys.iter().copied().filter(|(k, _)| *k != '.')
-    }
 }
 
 /// Every palette of a document in one RGBA8 image: one row per palette, in
-/// definition order, and one texel per key, in the palette's key order (`.` has
-/// none). The rest of a row repeats its last texel.
+/// definition order, and one texel per key, in the palette's key order (`.` too,
+/// though models leave it empty). The rest of a row repeats its last texel.
 ///
 /// Each key's UV is the center of its texel, so nearest sampling never reads a
 /// neighbor. Every model of a document uses this one texture, so a renderer can
@@ -48,11 +49,7 @@ pub struct PaletteTexture {
 
 impl PaletteTexture {
     pub(crate) fn new(palettes: &[Palette], limits: &Limits) -> Result<Option<Self>> {
-        let width = palettes
-            .iter()
-            .map(|p| p.texel_keys().count())
-            .max()
-            .unwrap_or(0);
+        let width = palettes.iter().map(|p| p.keys.len()).max().unwrap_or(0);
         if width == 0 {
             return Ok(None);
         }
@@ -63,7 +60,7 @@ impl PaletteTexture {
         for (row, palette) in palettes.iter().enumerate() {
             let mut last = Color::TRANSPARENT;
             let mut column = 0;
-            for (key, color) in palette.texel_keys() {
+            for &(key, color) in &palette.keys {
                 image.set_pixel(column, row as u32, color);
                 uvs.insert(
                     (palette.name.clone(), key),

@@ -190,3 +190,24 @@ fn malformed_input_never_panics() {
         start.elapsed()
     );
 }
+
+#[test]
+fn indentation_is_spaces_only() {
+    assert_eq!(codes("\u{a0}\tpalette p\n"), [(1, 1, ErrorCode::Syntax)]);
+    assert_eq!(
+        codes("palette p\n \u{3000}a #ffffff\n"),
+        [(2, 2, ErrorCode::Syntax)]
+    );
+}
+
+#[test]
+fn many_options_are_refused_quickly() {
+    let mut text = String::from("palette p");
+    for i in 0..300_000 {
+        text.push_str(&format!(" k{i}=0"));
+    }
+    let start = Instant::now();
+    let errors = check(&text);
+    assert_eq!(errors[0].code, ErrorCode::Syntax);
+    assert!(start.elapsed() < Duration::from_secs(2));
+}

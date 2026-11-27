@@ -26,21 +26,21 @@ fn texture_has_one_row_per_palette_and_one_texel_per_key() {
 
     let texture = doc.palette_texture().unwrap().unwrap();
     let image = texture.image();
-    assert_eq!((image.width(), image.height()), (4, 2));
+    assert_eq!((image.width(), image.height()), (5, 2));
     #[rustfmt::skip]
     let expected: Vec<u8> = vec![
-        // base: a b c, then c repeated to the row's end.
-        255, 0, 0, 255,  0, 255, 0, 255,  0, 0, 255, 128,  0, 0, 255, 128,
-        // night: a b c d.
-        255, 0, 0, 255,  0, 0x33, 0, 255,  0, 0, 255, 128,  255, 255, 255, 255,
+        // base: . a b c, then c repeated to the row's end.
+        0, 0, 0, 0,  255, 0, 0, 255,  0, 255, 0, 255,  0, 0, 255, 128,  0, 0, 255, 128,
+        // night: . a b c d.
+        0, 0, 0, 0,  255, 0, 0, 255,  0, 0x33, 0, 255,  0, 0, 255, 128,  255, 255, 255, 255,
     ];
     assert_eq!(image.pixels(), &expected[..]);
-    assert_eq!(texture.uv("base", 'a'), Some([0.125, 0.25]));
-    assert_eq!(texture.uv("base", 'c'), Some([0.625, 0.25]));
-    assert_eq!(texture.uv("night", 'b'), Some([0.375, 0.75]));
-    assert_eq!(texture.uv("night", 'd'), Some([0.875, 0.75]));
-    // `.` is empty space and has no texel.
-    assert_eq!(texture.uv("base", '.'), None);
+    assert_eq!(texture.uv("base", 'a'), Some([0.3, 0.25]));
+    assert_eq!(texture.uv("base", 'c'), Some([0.7, 0.25]));
+    assert_eq!(texture.uv("night", 'b'), Some([0.5, 0.75]));
+    assert_eq!(texture.uv("night", 'd'), Some([0.9, 0.75]));
+    // Every key has a texel, `.` too, though models leave it empty.
+    assert_eq!(texture.uv("base", '.'), Some([0.1, 0.25]));
     assert_eq!(texture.uv("base", 'd'), None);
     assert_eq!(texture.uv("other", 'a'), None);
     // The texture is a PNG like any other.
@@ -49,9 +49,12 @@ fn texture_has_one_row_per_palette_and_one_texel_per_key() {
 }
 
 #[test]
-fn no_texels_no_texture() {
-    let doc = Document::parse("palette empty\n  .  transparent\n").unwrap();
+fn no_keys_no_texture() {
+    let doc = Document::parse("palette empty\n").unwrap();
     assert_eq!(doc.palette_texture().unwrap(), None);
+    let doc = Document::parse("palette dot\n  .  #ff0000\n").unwrap();
+    let texture = doc.palette_texture().unwrap().unwrap();
+    assert_eq!(texture.uv("dot", '.'), Some([0.5, 0.5]));
     assert_eq!(
         Document::parse("").unwrap().palette_texture().unwrap(),
         None
@@ -146,4 +149,44 @@ fn spritebox_directives_are_named() {
             .message
             .contains("`sprite` is a spritebox directive")
     );
+}
+
+#[test]
+fn from_depth_does_not_depend_on_definition_order() {
+    use meshbox::{Limits, check_with};
+    let limits = Limits {
+        max_nesting: 1,
+        ..Limits::default()
+    };
+    let forward = "palette a\n  x #ffffff\npalette b from=a\npalette c from=b\n";
+    let backward = "palette c from=b\npalette b from=a\npalette a\n  x #ffffff\n";
+    let found = |text: &str| -> Vec<(usize, ErrorCode)> {
+        check_with(text, &limits)
+            .iter()
+            .map(|e| (e.position.unwrap().line, e.code))
+            .collect()
+    };
+    // `c` is two steps from `a` either way; `b` is one.
+    assert_eq!(found(forward), [(4, ErrorCode::LimitExceeded)]);
+    assert_eq!(found(backward), [(1, ErrorCode::LimitExceeded)]);
+}
+
+#[test]
+fn ramps_are_checked_as_spritebox_checks_them() {
+    // A ramp without a base names keys that the palette must have.
+    assert_eq!(
+        at("palette p\n  ramp shade ab\n"),
+        [(2, 14, ErrorCode::UnknownName)]
+    );
+    assert!(check("palette p\n  a #000000\n  b #ffffff\n  ramp shade ab\n").is_empty());
+    // A copied palette keeps its parent's ramps; another ramp may not take their keys,
+    // but a ramp of the same name replaces the parent's.
+    let parent = "palette p\n  a #000000\n  b #808080\n  c #ffffff\n  ramp shade ab\n";
+    assert_eq!(
+        at(&format!("{parent}palette q from=p\n  ramp other bc\n")),
+        [(7, 14, ErrorCode::DuplicateName)]
+    );
+    let doc = Document::parse(&format!("{parent}palette q from=p\n  ramp shade bc\n")).unwrap();
+    let ramps = doc.palette("q").unwrap().ramps();
+    assert_eq!(ramps, [("shade".to_owned(), vec!['b', 'c'])]);
 }
