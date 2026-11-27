@@ -266,3 +266,19 @@ fn diagnostics_are_capped() {
     assert_eq!(errors.len(), 1000);
     assert!(errors.windows(2).all(|w| w[0].position <= w[1].position));
 }
+
+#[test]
+fn tall_models_index_without_overflow() {
+    // Offsets are computed in usize, so a tall model with raised limits cannot wrap
+    // them; out-of-range coordinates are None.
+    let limits = Limits {
+        max_voxel_side: u32::MAX,
+        max_voxels: u64::MAX,
+        ..Limits::default()
+    };
+    let text = "palette p\n  a #ffffff\nvoxels m 2x1x3 palette=p\n  level 2\n    .a\n";
+    let doc = meshbox::Document::parse_with(text, &limits).unwrap();
+    let m = doc.model("m").unwrap();
+    assert_eq!(m.voxel(1, 2, 0), Some('a'));
+    assert_eq!(m.voxel(0, u32::MAX, 0), None);
+}

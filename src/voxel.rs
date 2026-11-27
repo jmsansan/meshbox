@@ -57,6 +57,7 @@ impl VoxelModel {
         if x >= w || y >= h || z >= d {
             return None;
         }
-        Some(self.cells[((y * d + z) * w + x) as usize])
+        let (x, y, z, w, d) = (x as usize, y as usize, z as usize, w as usize, d as usize);
+        Some(self.cells[(y * d + z) * w + x])
     }
 }
