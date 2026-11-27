@@ -172,8 +172,8 @@ imports (or 256, whichever is less).
 
 - **Meshes.** `Document::mesh` gives a `Mesh`: positions, normals and UVs as `f32`,
   `u32` indices, counter-clockwise front faces, opaque triangles first and
-  translucent ones from `translucent_start`. Faces between two opaque voxels, or two
-  voxels of one translucent key, are dropped; an opaque face against a translucent
+  translucent ones after them (`opaque_indices` and `translucent_indices`). Faces
+  between two opaque voxels, or two voxels of one translucent key, are dropped; an opaque face against a translucent
   voxel is kept, and so are both faces between different translucent keys. Faces of
   one key and direction in a plane are merged into rectangles by greedy meshing, in a
   fixed order, so the same text gives the same bytes.

@@ -23,11 +23,11 @@ The first release: voxel models from text to glTF and a preview sheet.
 - A PNG encoder of the crate's own: indexed (1 to 8 bits, with `tRNS` when a color
   is not opaque) for up to 256 colors and RGBA8 otherwise, with no metadata chunks.
 - Greedy meshing: `Document::mesh` gives a `Mesh` of positions, normals, UVs and
-  `u32` indices, counter-clockwise, opaque triangles first and translucent ones from
-  `translucent_start`. Faces between two opaque voxels, or two voxels of one
-  translucent key, are dropped, and faces of one key and direction in a plane are
-  merged into rectangles, in a fixed order, so the same text gives the same bytes on
-  every platform. `Mesh::stats` and `Mesh::bounds`.
+  `u32` indices, counter-clockwise, opaque triangles first and translucent ones after
+  them (`Mesh::opaque_indices`, `Mesh::translucent_indices`). Faces between two
+  opaque voxels, or two voxels of one translucent key, are dropped, and faces of one
+  key and direction in a plane are merged into rectangles, in a fixed order, so the
+  same text gives the same bytes on every platform. `Mesh::stats` and `Mesh::bounds`.
 - Binary glTF: `Document::glb`, and `Document::export` with `Export::glb_files`,
   give a file per model, as bytes, with one scene and one node at its origin and,
   when the model has faces, the palette texture embedded as PNG with nearest sampling
