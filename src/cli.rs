@@ -70,7 +70,15 @@ pub fn run(args: &[String]) -> ExitCode {
     let options = match parse_args(args) {
         Ok(options) => options,
         Err(message) => {
-            let printed = warn(&format!("meshbox: {message}\n\n{USAGE}"));
+            // With --json the outcome is one JSON object, bad usage included.
+            let printed = if args.iter().any(|a| a == "--json") {
+                say(&format!(
+                    "{{\"version\":1,\"ok\":false,\"diagnostics\":[{{\"code\":\"invalid_argument\",\"severity\":\"error\",\"message\":{}}}],\"written\":[]}}",
+                    quote(&message)
+                ))
+            } else {
+                warn(&format!("meshbox: {message}\n\n{USAGE}"))
+            };
             return ExitCode::from(if printed { EXIT_USAGE } else { EXIT_IO });
         }
     };
@@ -137,6 +145,58 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
     })
 }
 
+/// A full path as an import name: `/` between parts, and on Windows without the
+/// `\\?\` prefix that canonical paths have (`//server/share` for a network path).
+fn import_name(path: &Path) -> String {
+    let text = path.to_string_lossy().replace('\\', "/");
+    if let Some(unc) = text.strip_prefix("//?/UNC/") {
+        format!("//{unc}")
+    } else if let Some(local) = text.strip_prefix("//?/") {
+        local.to_owned()
+    } else {
+        text
+    }
+}
+
+/// A file name of the parse as it is shown: relative to the file given when it is
+/// beside or under it, as the author wrote it.
+fn shown(options: &Options, name: &str) -> String {
+    let base = base_dir(options);
+    let dir = if base.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        base.as_path()
+    };
+    let Ok(dir) = std::fs::canonicalize(dir) else {
+        return name.to_owned();
+    };
+    let dir = format!("{}/", import_name(&dir));
+    match name.strip_prefix(dir.as_str()) {
+        Some(rest) => base.join(rest).display().to_string(),
+        None => name.to_owned(),
+    }
+}
+
+/// A message with the full names of files beside or under the file given shortened,
+/// as in [`shown`].
+fn shortened(options: &Options, message: &str) -> String {
+    let base = base_dir(options);
+    let dir = if base.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        base.as_path()
+    };
+    let Ok(dir) = std::fs::canonicalize(dir) else {
+        return message.to_owned();
+    };
+    let prefix = if base.as_os_str().is_empty() || options.file == "-" {
+        String::new()
+    } else {
+        format!("{}/", base.to_string_lossy().replace('\\', "/"))
+    };
+    message.replace(&format!("`{}/", import_name(&dir)), &format!("`{prefix}"))
+}
+
 /// The directory that imports are read relative to.
 fn base_dir(options: &Options) -> PathBuf {
     if options.file == "-" {
@@ -200,13 +260,23 @@ fn execute(options: &Options) -> ExitCode {
         }
     };
     // The file given is parsed under its own name, so that importing itself is a cycle.
+    // The file given goes by its full path, so that every import resolves to a full
+    // path too: a file reached by a relative and by an absolute spelling is one file.
     let root_name = if options.file == "-" {
-        String::new()
-    } else {
-        Path::new(&options.file)
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
+        std::fs::canonicalize(".")
+            .ok()
+            .map(|dir| format!("{}/-", import_name(&dir)))
             .unwrap_or_default()
+    } else {
+        std::fs::canonicalize(&options.file)
+            .ok()
+            .map(|path| import_name(&path))
+            .unwrap_or_else(|| {
+                Path::new(&options.file)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            })
     };
     let mut loader = FileLoader {
         base: base_dir(options),
@@ -499,10 +569,7 @@ fn report(options: &Options, errors: &[Error], written: &[PathBuf], status: u8) 
     // An error in an imported file names it relative to the file given.
     let at = |e: &Error| -> String {
         match &e.file {
-            Some(name) => {
-                let path = base_dir(options).join(name);
-                path.display().to_string()
-            }
+            Some(name) => shown(options, name),
             None => file.to_owned(),
         }
     };
@@ -529,7 +596,11 @@ fn report(options: &Options, errors: &[Error], written: &[PathBuf], status: u8) 
             if let Some(p) = e.position {
                 let _ = write!(json, ",\"line\":{},\"column\":{}", p.line, p.column);
             }
-            let _ = write!(json, ",\"message\":{}}}", quote(&e.message));
+            let _ = write!(
+                json,
+                ",\"message\":{}}}",
+                quote(&shortened(options, &e.message))
+            );
         }
         json.push_str("],\"written\":[");
         for (i, path) in written.iter().enumerate() {
@@ -550,10 +621,17 @@ fn report(options: &Options, errors: &[Error], written: &[PathBuf], status: u8) 
                         p.line,
                         p.column,
                         e.code,
-                        e.message
+                        shortened(options, &e.message)
                     ));
                 }
-                None => printed &= warn(&format!("{}: error[{}]: {}", at(e), e.code, e.message)),
+                None => {
+                    printed &= warn(&format!(
+                        "{}: error[{}]: {}",
+                        at(e),
+                        e.code,
+                        shortened(options, &e.message)
+                    ))
+                }
             }
         }
         for path in written {

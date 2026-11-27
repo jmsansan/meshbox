@@ -503,7 +503,8 @@ fn review_cases_six() {
     let output = meshbox(&["check", twice.to_str().unwrap()]);
     assert_eq!(status(&output), 1);
     assert!(
-        String::from_utf8_lossy(&output.stderr).contains("line 1 of `shared.meshbox`"),
+        String::from_utf8_lossy(&output.stderr).contains("line 1 of `")
+            && String::from_utf8_lossy(&output.stderr).contains("/shared.meshbox`"),
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
@@ -545,4 +546,62 @@ fn review_cases_seven() {
     ]);
     assert_eq!(status(&one), 0, "{one:?}");
     assert!(out.join("model-dot.glb").exists());
+}
+
+#[test]
+fn review_cases_eight() {
+    let d = dir("review-eight");
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_meshbox"))
+            .args(args)
+            .current_dir(&d)
+            .output()
+            .unwrap()
+    };
+    // One file reached by a relative and an absolute spelling is one file.
+    std::fs::create_dir_all(d.join("props")).unwrap();
+    std::fs::write(d.join("shared.meshbox"), "palette p\n  a #ffffff\n").unwrap();
+    let full = std::fs::canonicalize(&d).unwrap().join("shared.meshbox");
+    let full = full.to_str().unwrap().replace('\\', "/");
+    let full = full.strip_prefix("//?/").unwrap_or(&full).to_owned();
+    std::fs::write(
+        d.join("props/box.meshbox"),
+        format!("import \"{full}\"\nvoxels box 1x1x1 palette=p\n  level 0\n    a\n"),
+    )
+    .unwrap();
+    std::fs::write(
+        d.join("scene.meshbox"),
+        "import shared.meshbox\nimport props/box.meshbox\n",
+    )
+    .unwrap();
+    let output = run(&["check", "scene.meshbox"]);
+    assert_eq!(status(&output), 0, "{output:?}");
+    // Names in messages are as the author wrote them.
+    std::fs::write(
+        d.join("twice.meshbox"),
+        "import shared.meshbox\npalette p\n  a #000000\n",
+    )
+    .unwrap();
+    let output = run(&["check", "twice.meshbox"]);
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("line 1 of `shared.meshbox`"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    // Bad usage with --json is one JSON object too.
+    let output = run(&[
+        "render",
+        "scene.meshbox",
+        "--out",
+        "out",
+        "--scale",
+        "33",
+        "--json",
+    ]);
+    assert_eq!(status(&output), 2);
+    let doc = json::parse(String::from_utf8(output.stdout).unwrap().trim());
+    assert_eq!(
+        doc.get("diagnostics").at(0).get("code").str(),
+        "invalid_argument"
+    );
 }
