@@ -178,7 +178,8 @@ imports (or 256, whichever is less).
 - **The palette texture.** Every palette of a document in one RGBA8 image, one row
   per palette and one texel per key; each key's UV is its texel's center. Every model
   of a document samples this one texture, so a renderer can draw them all with one
-  material.
+  material. A document whose palettes have no keys has no texture
+  (`palette_texture` is `None`), and `render` writes a 1×1 transparent `palette.png`.
 - **Binary glTF.** `Document::glb(name)`, or `Document::export()` and
   `Export::glb_files()` for a file per model. Each file has one scene with one node at
   the model's origin and, when the model has faces, the palette texture embedded as

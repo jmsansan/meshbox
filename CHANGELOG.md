@@ -14,8 +14,10 @@ The first release: voxel models from text to glTF and a preview sheet.
   column.
 - `palette` with spritebox's syntax, `from=`, `ramp` lines and `lint=`
   included: a file of palettes is valid in both crates, with names of at most 128
-  characters and no byte order mark (which meshbox skips and spritebox does not). `Document::palette_texture` puts every palette in one RGBA8 image, one
-  row per palette and one texel per key, with a UV per key at the texel's center.
+  characters and no byte order mark (which meshbox skips and spritebox does not).
+  `Document::palette_texture` puts every palette in one RGBA8 image, one row per
+  palette and one texel per key, with a UV per key at the texel's center (`None` when
+  no palette has a key).
 - `voxels NAME WxDxH palette=P [origin=x,y,z] [unit=U]` with `level N` blocks:
   rows from the back (-Z) to the front (+Z), columns along +X, levels up +Y.
 - A PNG encoder of the crate's own: indexed (1 to 8 bits, with `tRNS` when a color
