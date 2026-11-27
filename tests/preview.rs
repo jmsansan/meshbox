@@ -169,7 +169,7 @@ voxels pane 3x1x2 palette=p origin=0,0,0 unit=0.1
     assert_eq!(bytes, again);
     // A golden hash: the same on every platform.
     let hash = common::fnv(&bytes);
-    assert_eq!(hash, 0x7b5e0908d3099d5a, "{hash:x}");
+    assert_eq!(hash, 0x5b5391762865f6d1, "{hash:x}");
 }
 
 /// The frame color behind the views.
@@ -245,5 +245,58 @@ fn long_thin_faces_render_quickly() {
         start.elapsed() < std::time::Duration::from_secs(60),
         "{:?}",
         start.elapsed()
+    );
+}
+
+#[test]
+fn nearer_glass_is_never_lost_to_a_depth_tie() {
+    // Red behind green glass: the red face against the glass is seen only through it.
+    let text = "palette p\n  r #ff0000\n  g #00ff0080\nvoxels m 1x2x1 palette=p\n  level 0\n    r\n    g\n";
+    for scale in [4, 8, 13] {
+        let image = preview(text, scale);
+        // The red face toward +Z, lit and unblended.
+        let bare = Color::rgb(177, 0, 0);
+        for y in 0..image.height() {
+            for x in 0..image.width() {
+                assert_ne!(pixel(&image, x, y), bare, "({x}, {y}) at scale {scale}");
+            }
+        }
+    }
+}
+
+#[test]
+fn translucent_layers_are_limited() {
+    // 64 layers of glass in two alternating keys, one behind another.
+    let mut text =
+        String::from("palette p\n  a #ff000040\n  b #0000ff40\nvoxels m 32x64x32 palette=p\n");
+    for y in 0..32 {
+        text.push_str(&format!("  level {y}\n"));
+        for z in 0..64 {
+            let key = if z % 2 == 0 { "a" } else { "b" };
+            text.push_str(&format!("    {}\n", key.repeat(32)));
+        }
+    }
+    let doc = Document::parse(&text).unwrap();
+    let limits = meshbox::Limits {
+        max_image_pixels: 40_000,
+        ..meshbox::Limits::default()
+    };
+    let err = doc
+        .preview_with(
+            &PreviewOptions {
+                scale: 1,
+                grid: false,
+            },
+            &limits,
+        )
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::LimitExceeded);
+    // With the default limits it draws.
+    assert!(
+        doc.preview(&PreviewOptions {
+            scale: 1,
+            grid: false
+        })
+        .is_ok()
     );
 }

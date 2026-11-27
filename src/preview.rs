@@ -66,6 +66,9 @@ const ISO_UP: f32 = 0.816_496_6;
 const LIGHT: [f32; 3] = [0.399_501, 0.799_002, 0.449_439];
 const AMBIENT: f32 = 0.45;
 const DIFFUSE: f32 = 0.55;
+/// Depth steps per voxel: interpolated depths keep 1/65536 of a voxel, so faces a
+/// fraction of a voxel apart never tie.
+const DEPTH: i64 = 1 << 16;
 
 /// One view laid out: an integer projection of voxel coordinates to subpixels.
 struct Frame {
@@ -125,10 +128,10 @@ impl Frame {
         let [x, y, z] = c.map(i64::from);
         let [a, b, e] = self.step;
         match self.view {
-            View::Front => [x * a, -y * a, z],
-            View::Right => [-z * a, -y * a, x],
-            View::Top => [x * a, z * a, y],
-            View::Iso => [(x - z) * a, (x + z) * b - y * e, x + y + z],
+            View::Front => [x * a, -y * a, z * DEPTH],
+            View::Right => [-z * a, -y * a, x * DEPTH],
+            View::Top => [x * a, z * a, y * DEPTH],
+            View::Iso => [(x - z) * a, (x + z) * b - y * e, (x + y + z) * DEPTH],
         }
     }
 
@@ -190,6 +193,17 @@ fn render(
     for q in clear.iter().filter(|q| frame.faces(q.axis, q.positive)) {
         for t in triangles(q) {
             canvas.fragments(t, color(q), &mut fragments);
+            // Translucent layers are bounded like the pixels of an image, so that
+            // deep stacks of glass cannot exhaust memory.
+            if fragments.len() as u64 > limits.max_image_pixels {
+                return Err(Error::new(
+                    ErrorCode::LimitExceeded,
+                    format!(
+                        "A view has more translucent fragments than the limit of {} pixels",
+                        limits.max_image_pixels
+                    ),
+                ));
+            }
         }
     }
     canvas.blend_fragments(fragments);
