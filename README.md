@@ -257,11 +257,11 @@ meshbox render <file> --out <dir> [--scale <n>] [--model <name>] [--json]
 ## Errors
 
 `Document::parse` returns the first error; `meshbox::check` returns the errors it
-finds, up to 1000, ordered by position. A definition's header reports its first fault,
-and an error that only follows from another (a model whose palette failed) is not
-reported. Each `Error` has a stable `code`, a `message`, a 1-based `position` when it
-concerns a place (line, and column counted in characters) and, for an error in an
-imported file, that file's name. The codes and their JSON names:
+finds, up to 1000, ordered by position. It reports what it can rather than every
+fault: a line may stop being read at its first fault, and an error that follows from
+another may also be reported. Each `Error` has a stable `code`, a `message`, a
+1-based `position` when it concerns a place (line, and column counted in characters)
+and, for an error in an imported file, that file's name. The codes and their JSON names:
 
 | Code | JSON | Meaning |
 | --- | --- | --- |
@@ -280,8 +280,8 @@ imported file, that file's name. The codes and their JSON names:
 `Limits` bounds the work any input can cause. The functions with `_with` in their
 names take one, and the others (`Document::parse`, `check` and so on) use the
 defaults, which suit hand-written files and untrusted input. Parsing takes memory in
-proportion to the text, which `max_text_bytes` bounds, and keeps the first 1000
-errors by position.
+proportion to the text and to the voxels models declare, which `max_text_bytes` and
+`max_voxels` bound, and keeps the first 1000 errors by position.
 
 | Limit | Default | Bounds |
 | --- | --- | --- |
@@ -294,7 +294,7 @@ errors by position.
 | `max_vertices` | 4194304 | Vertices of all meshes together |
 | `max_image_side` | 8192 | Side of any image created |
 | `max_image_pixels` | 16777216 | Pixels of any image created |
-| `max_nesting` | 32 | Depth of `from=` chains, and of imports to reach a file the first time |
+| `max_nesting` | 32 | Depth of `from=` chains, and of imports to reach a file the first time (at most 256 for imports) |
 
 ## Limitations
 

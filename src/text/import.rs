@@ -169,7 +169,7 @@ impl Files {
                     ErrorCode::LimitExceeded,
                     format!(
                         "Imports nested more than the limit of {} deep",
-                        loading.limits.max_nesting
+                        loading.limits.max_nesting.min(MAX_DEPTH)
                     ),
                 ));
                 continue;

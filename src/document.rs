@@ -211,8 +211,8 @@ impl Document {
 }
 
 /// Parses `text` and returns the errors it finds, ordered by position, up to 1000: an
-/// empty list when the text is valid. A definition's header reports its first fault,
-/// and an error that only follows from another is not reported.
+/// empty list when the text is valid. It reports what it can rather than every fault:
+/// a line may stop being read at its first fault.
 ///
 /// ```
 /// let errors = meshbox::check("palette p\n  rr #ff0000\nvoxels\n");

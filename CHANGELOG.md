@@ -9,9 +9,9 @@ The first release: voxel models from text to glTF and a preview sheet.
   check that meshbox has no dependencies.
 - The text format: definitions at column 1, blocks indented with spaces, `;`
   comments, `key=value` options, `WxDxH` sizes and `x,y,z` vectors. `Document::parse`
-  returns the first error and `check` the errors it finds (a header's first fault, and
-  none that only follows from another), up to 1000, ordered by position, each with a
-  stable code and, when it has a place, a 1-based line and column.
+  returns the first error and `check` the errors it finds, up to 1000, ordered by
+  position, each with a stable code and, when it has a place, a 1-based line and
+  column.
 - `palette` with spritebox's syntax, `from=`, `ramp` lines and `lint=`
   included: a file of palettes is valid in both crates, with names of at most 128
   characters. `Document::palette_texture` puts every palette in one RGBA8 image, one
