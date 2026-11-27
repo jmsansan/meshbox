@@ -37,7 +37,8 @@ impl Document {
     ///
     /// `import NAME` (or `import "NAME"`) brings in another file's definitions. The
     /// loader gets the name resolved against the importing file's directory, with `/`
-    /// between parts, and decides what it means: files on disk, assets embedded in a
+    /// between parts and `.` and `..` resolved by name (not by following links), and
+    /// decides what it means: files on disk, assets embedded in a
     /// game, or anything else. Nothing touches the file system unless the loader does.
     ///
     /// ```

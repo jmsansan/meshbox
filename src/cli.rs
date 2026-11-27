@@ -70,22 +70,35 @@ pub fn run(args: &[String]) -> ExitCode {
     let options = match parse_args(args) {
         Ok(options) => options,
         Err(message) => {
-            // `--json` as the value of another option, a model's name, is not the flag.
-            let mut json = false;
-            let mut iter = args.iter();
-            while let Some(arg) = iter.next() {
-                match arg.as_str() {
-                    "--model" | "--out" | "--scale" => {
-                        iter.next();
-                    }
-                    "--json" => json = true,
-                    _ => {}
-                }
-            }
-            return usage_error(&message, json);
+            return usage_error(&message, wants_json(args.iter().map(|a| Some(a.as_str()))));
         }
     };
     execute(&options)
+}
+
+/// Whether `--json` is among `args` as the flag, the way the arguments are parsed:
+/// `--model` takes any next argument, `--out` and `--scale` one that is not an
+/// option. `None` is an argument that is not Unicode.
+pub fn wants_json<'a>(args: impl IntoIterator<Item = Option<&'a str>>) -> bool {
+    let mut args = args.into_iter().peekable();
+    while let Some(arg) = args.next() {
+        match arg {
+            Some("--model") => {
+                args.next();
+            }
+            Some("--out" | "--scale") => {
+                if args
+                    .peek()
+                    .is_some_and(|next| !next.is_some_and(|n| n.starts_with("--")))
+                {
+                    args.next();
+                }
+            }
+            Some("--json") => return true,
+            _ => {}
+        }
+    }
+    false
 }
 
 /// Reports bad usage, as one JSON object with `json`, and returns status 2 (3 when

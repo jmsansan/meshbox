@@ -223,9 +223,13 @@ pub(crate) fn resolve(from: &str, name: &str) -> String {
     let joined = if drive(name) || name.starts_with("//") {
         name.to_owned()
     } else if name.starts_with('/') {
-        // `/x` from a file on a drive is `x` on that drive.
+        // `/x` from a file on a drive is `x` on that drive, and from a file on a
+        // network share, `x` on that share.
         if drive(from) {
             format!("{}{name}", &from[..2])
+        } else if let Some(rest) = from.strip_prefix("//").filter(|r| !r.starts_with('/')) {
+            let share: Vec<&str> = rest.splitn(3, '/').take(2).collect();
+            format!("//{}{name}", share.join("/"))
         } else {
             name.to_owned()
         }
@@ -285,6 +289,10 @@ mod tests {
         assert_eq!(
             resolve("C:/project/scene", "\\project\\shared"),
             "C:/project/shared"
+        );
+        assert_eq!(
+            resolve("//server/share/a/part", "/palette"),
+            "//server/share/palette"
         );
     }
 }

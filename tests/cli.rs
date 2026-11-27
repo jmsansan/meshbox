@@ -621,3 +621,15 @@ fn a_model_named_json_is_not_the_flag() {
     assert_eq!(status(&output), 2);
     assert!(output.stdout.is_empty());
 }
+
+#[test]
+fn json_is_found_as_the_parser_reads_it() {
+    // `--out --json`: --out has no value, and --json is the flag.
+    let output = meshbox(&["render", "scene.meshbox", "--out", "--json"]);
+    assert_eq!(status(&output), 2);
+    let doc = json::parse(String::from_utf8(output.stdout).unwrap().trim());
+    assert_eq!(
+        doc.get("diagnostics").at(0).get("code").str(),
+        "invalid_argument"
+    );
+}
