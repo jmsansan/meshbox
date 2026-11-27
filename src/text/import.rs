@@ -252,7 +252,18 @@ impl lex::Token<'_> {
 /// unless it starts with `/` or a drive such as `C:`, with `.` and `..` resolved, `/`
 /// between parts. A `\`, as Windows authors may write, separates parts as `/` does.
 pub(crate) fn resolve(from: &str, name: &str) -> String {
-    let (from, name) = (from.replace('\\', "/"), name.replace('\\', "/"));
+    // Windows' verbatim prefixes, as canonical paths have, name the same files.
+    let plain = |n: &str| {
+        let n = n.replace('\\', "/");
+        if let Some(unc) = n.strip_prefix("//?/UNC/") {
+            format!("//{unc}")
+        } else if let Some(local) = n.strip_prefix("//?/") {
+            local.to_owned()
+        } else {
+            n
+        }
+    };
+    let (from, name) = (plain(from), plain(name));
     let (from, name) = (from.as_str(), name.as_str());
     let drive = |n: &str| {
         let b = n.as_bytes();
@@ -332,5 +343,10 @@ mod tests {
             resolve("//server/share/a/part", "/palette"),
             "//server/share/palette"
         );
+        assert_eq!(
+            resolve(r"\\?\UNC\server\share\art\scene", "/palette"),
+            "//server/share/palette"
+        );
+        assert_eq!(resolve(r"\\?\C:\art\scene", "p"), "C:/art/p");
     }
 }
