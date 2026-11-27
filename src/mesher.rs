@@ -60,7 +60,10 @@ pub(crate) fn quads(
     };
     // Rarely more rectangles than solid voxels; reserving that avoids most growth.
     let solid = model.cells.iter().filter(|&&c| c != 0).count();
-    let (mut opaque, mut clear) = (Vec::with_capacity(solid), Vec::new());
+    // Capped, so that a large solid model that merges into few rectangles does not
+    // reserve memory for one per voxel.
+    let reserve = (solid as u64).min(max).min(1 << 16) as usize;
+    let (mut opaque, mut clear) = (Vec::with_capacity(reserve), Vec::new());
     let mut faces = 0u64;
     for axis in 0..3 {
         // The plane's two other axes, so that u × v points along +axis.
