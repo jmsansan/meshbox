@@ -259,7 +259,8 @@ meshbox render <file> --out <dir> [--scale <n>] [--model <name>] [--json]
 - `<file>` may be `-` for standard input, whose imports are read relative to the
   current directory; a file's imports are read relative to the file.
 - Exit statuses: 0 success; 1 the file has errors, or what is asked of it cannot be
-  done (an unknown `--model`, an output past the limits); 2 bad usage, or an output
+  done (an unknown `--model`, an output past the limits, two models whose names
+  differ only in case, whose files would collide); 2 bad usage, or an output
   that is a symbolic link or would replace an input (a hard link is not detected); 3
   an I/O error.
 
