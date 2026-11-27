@@ -28,7 +28,9 @@ mod raster;
 mod text;
 mod voxel;
 
-pub use document::{Document, Export, check, check_with};
+pub use document::{
+    Document, Export, check, check_file_with_loader, check_with, check_with_loader,
+};
 pub use error::{Error, ErrorCode, Position, Result};
 pub use image::{Color, Image};
 pub use limits::Limits;

@@ -60,6 +60,8 @@ pub(crate) fn lex<'a>(
     max_roots: usize,
     errors: &mut Errors,
 ) -> Vec<Node<'a>> {
+    // A byte order mark, as some editors write, is not text.
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let mut roots: Vec<Node<'a>> = Vec::new();
     // The open nodes, outermost first.
     let mut stack: Vec<Node<'a>> = Vec::new();
@@ -75,9 +77,14 @@ pub(crate) fn lex<'a>(
         {
             close(&mut stack, &mut roots);
         }
-        // Past `max_roots` definitions, the rest of the text is not lexed: the parser
-        // reports the first definition past the limit.
-        if stack.is_empty() && roots.len() > max_roots {
+        // Past `max_roots` definitions and imports, the rest of the text is not lexed,
+        // and that is an error.
+        if stack.is_empty() && roots.len() >= max_roots {
+            errors.push(Error::at(
+                Position::in_file(file, number, 1),
+                ErrorCode::LimitExceeded,
+                format!("More than the limit of {max_roots} definitions and imports in one file"),
+            ));
             break;
         }
         let siblings = match stack.last() {

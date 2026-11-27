@@ -16,7 +16,9 @@ use crate::{Error, Result};
 pub struct Limits {
     /// Length of the text in bytes, imported files included. Default 4 MiB.
     pub max_text_bytes: usize,
-    /// Number of top-level definitions: palettes, models and so on. Default 4096.
+    /// Number of top-level definitions (palettes, models and so on) in the text with
+    /// its imports, and of top-level lines (definitions and imports) in any one
+    /// file. Default 4096.
     pub max_definitions: usize,
     /// Keys in one palette, inherited keys included. Default 256.
     pub max_palette_colors: usize,

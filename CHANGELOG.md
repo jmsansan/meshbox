@@ -32,3 +32,14 @@
   translucent faces. The top view has optional grid lines at voxel boundaries, and
   the labels use a built-in 5×7 pixel font. The same document gives the same pixels
   on every platform.
+- Imports: `import NAME` (or `import "NAME"`) brings in another file's definitions,
+  read through the caller's loader with `Document::parse_with_loader` and
+  `check_with_loader`, or `Document::parse_file_with_loader` and
+  `check_file_with_loader` for text with a name of its own; nothing touches the file system unless the loader does. Names
+  resolve against the importing file's directory; cycles are `cycle`, depth past
+  `max_nesting` is `limit_exceeded`, and an error in an imported file names it.
+- The `meshbox` command: `check <file> [--json]` and
+  `render <file> --out <dir> [--scale <n>] [--model <name>] [--json]`, which writes
+  `model-NAME.glb` per model, `palette.png`, `preview.png` and `meshbox.json`, and
+  nothing when the file has errors. `-` reads standard input. Exit statuses: 0
+  success, 1 errors in the file, 2 bad usage, 3 I/O errors.

@@ -29,7 +29,50 @@ impl Document {
 
     /// Parses `text` within `limits`, returning the first error.
     pub fn parse_with(text: &str, limits: &Limits) -> Result<Self> {
-        text::parse(text, limits).map_err(|mut errors| errors.swap_remove(0))
+        text::parse(text, "", limits, None).map_err(|mut errors| errors.swap_remove(0))
+    }
+
+    /// Parses `text` within `limits`, reading the files it imports through `loader`,
+    /// and returns the first error.
+    ///
+    /// `import NAME` (or `import "NAME"`) brings in another file's definitions. The
+    /// loader gets the name resolved against the importing file's directory, with `/`
+    /// between parts and `.` and `..` resolved by name (not by following links), and
+    /// decides what it means. Names resolve the same on every platform: `\` is `/`, a
+    /// name may start with a drive (`C:/`), and one that starts with `//` is a network
+    /// path (`//server/share/...`) whose share `..` does not leave: files on disk, assets embedded in a
+    /// game, or anything else. Nothing touches the file system unless the loader does.
+    ///
+    /// ```
+    /// use meshbox::{Document, Error, ErrorCode, Limits};
+    ///
+    /// let mut loader = |name: &str| match name {
+    ///     "shared/palettes.meshbox" => Ok("palette dawn\n  k #1a1c2c\n".to_owned()),
+    ///     _ => Err(Error::new(ErrorCode::Io, format!("no file {name}"))),
+    /// };
+    /// let text = "import shared/palettes.meshbox\nvoxels dot 1x1x1 palette=dawn\n  level 0\n    k\n";
+    /// let document = Document::parse_with_loader(text, &Limits::default(), &mut loader)?;
+    /// assert!(document.palette("dawn").is_some());
+    /// # Ok::<(), Error>(())
+    /// ```
+    pub fn parse_with_loader(
+        text: &str,
+        limits: &Limits,
+        loader: &mut dyn FnMut(&str) -> Result<String>,
+    ) -> Result<Self> {
+        text::parse(text, "", limits, Some(loader)).map_err(|mut errors| errors.swap_remove(0))
+    }
+
+    /// Parses `text`, the contents of the file `name`, reading its imports through
+    /// `loader`, and returns the first error. Imports resolve against `name`'s
+    /// directory, and a file that imports itself is a cycle.
+    pub fn parse_file_with_loader(
+        name: &str,
+        text: &str,
+        limits: &Limits,
+        loader: &mut dyn FnMut(&str) -> Result<String>,
+    ) -> Result<Self> {
+        text::parse(text, name, limits, Some(loader)).map_err(|mut errors| errors.swap_remove(0))
     }
 
     /// The palettes, in definition order.
@@ -105,11 +148,22 @@ impl Document {
 
     /// Every model meshed, within `limits`.
     pub fn export_with(&self, limits: &Limits) -> Result<Export> {
+        let names: Vec<&str> = self.models.iter().map(|m| m.name.as_str()).collect();
+        self.export_models_with(&names, limits)
+    }
+
+    /// The models named in `names` meshed, in that order, within `limits`; the
+    /// vertex limit counts them together.
+    pub fn export_models_with(&self, names: &[&str], limits: &Limits) -> Result<Export> {
+        let selected = names
+            .iter()
+            .map(|&name| self.find(name))
+            .collect::<Result<Vec<_>>>()?;
         let texture = self.palette_texture_with(limits)?;
         let png = texture.as_ref().map(|t| png::encode(t.image()));
         let mut vertices = 0;
-        let mut models = Vec::with_capacity(self.models.len());
-        for model in &self.models {
+        let mut models = Vec::with_capacity(selected.len());
+        for model in selected {
             let mesh = mesher::mesh(
                 model,
                 &self.palettes,
@@ -131,7 +185,22 @@ impl Document {
 
     /// The preview sheet of every model, within `limits`.
     pub fn preview_with(&self, options: &PreviewOptions, limits: &Limits) -> Result<Image> {
-        let models: Vec<&VoxelModel> = self.models.iter().collect();
+        let names: Vec<&str> = self.models.iter().map(|m| m.name.as_str()).collect();
+        self.preview_models_with(&names, options, limits)
+    }
+
+    /// The preview sheet of the models named in `names`, in that order, within
+    /// `limits`.
+    pub fn preview_models_with(
+        &self,
+        names: &[&str],
+        options: &PreviewOptions,
+        limits: &Limits,
+    ) -> Result<Image> {
+        let models = names
+            .iter()
+            .map(|&name| self.find(name))
+            .collect::<Result<Vec<_>>>()?;
         preview::sheet(&models, &self.palettes, options, limits)
     }
 
@@ -155,7 +224,21 @@ pub fn check(text: &str) -> Vec<Error> {
 
 /// Parses `text` within `limits` and returns every error, ordered by position.
 pub fn check_with(text: &str, limits: &Limits) -> Vec<Error> {
-    match text::parse(text, limits) {
+    match text::parse(text, "", limits, None) {
+        Ok(_) => Vec::new(),
+        Err(errors) => errors,
+    }
+}
+
+/// Parses `text` within `limits`, reading imports through `loader`, and returns every
+/// error, ordered by file and position, up to 1000. An error in an imported file names
+/// that file in [`Error::file`].
+pub fn check_with_loader(
+    text: &str,
+    limits: &Limits,
+    loader: &mut dyn FnMut(&str) -> Result<String>,
+) -> Vec<Error> {
+    match text::parse(text, "", limits, Some(loader)) {
         Ok(_) => Vec::new(),
         Err(errors) => errors,
     }
@@ -200,5 +283,29 @@ impl Export {
             let bytes = gltf::glb(&[gltf::Part { name, mesh }], self.png.as_deref())?;
             Ok((format!("model-{name}.glb"), bytes))
         })
+    }
+
+    /// The model named `name` as binary glTF.
+    pub fn glb(&self, name: &str) -> Result<Vec<u8>> {
+        let (name, mesh) =
+            self.models.iter().find(|(n, _)| n == name).ok_or_else(|| {
+                Error::new(ErrorCode::UnknownName, format!("Unknown model `{name}`"))
+            })?;
+        gltf::glb(&[gltf::Part { name, mesh }], self.png.as_deref())
+    }
+}
+
+/// Parses `text`, the contents of the file `name`, reading its imports through
+/// `loader`, and returns every error, up to 1000. Imports resolve against `name`'s
+/// directory, and a file that imports itself is a cycle.
+pub fn check_file_with_loader(
+    name: &str,
+    text: &str,
+    limits: &Limits,
+    loader: &mut dyn FnMut(&str) -> Result<String>,
+) -> Vec<Error> {
+    match text::parse(text, name, limits, Some(loader)) {
+        Ok(_) => Vec::new(),
+        Err(errors) => errors,
     }
 }
