@@ -59,7 +59,7 @@ pub(crate) fn parse(text: &str, limits: &Limits) -> Result<Document, Vec<Error>>
             ),
         )]);
     }
-    let nodes = lex::lex(text, 0, &mut errors);
+    let nodes = lex::lex(text, 0, limits.max_definitions, &mut errors);
     let mut parser = Parser {
         limits,
         errors,
@@ -507,16 +507,16 @@ impl<'a> Parser<'a, '_> {
             }
         }
         no_children(node, "a ramp")?;
-        if keys
-            .text
-            .chars()
-            .nth(self.limits.max_palette_colors)
-            .is_some()
-        {
+        // Ramps share no keys and name only palette keys, so all of a palette's ramps
+        // have at most as many keys as a palette: past that, the ramp is refused before
+        // any work on its keys, which keeps checking them against other ramps cheap.
+        let used: usize = ramps.iter().map(|(_, k)| k.len()).sum();
+        let room = self.limits.max_palette_colors.saturating_sub(used);
+        if keys.text.chars().nth(room).is_some() {
             return Err(keys.error(
                 ErrorCode::LimitExceeded,
                 format!(
-                    "Ramp `{}` has more keys than the limit of {} a palette",
+                    "With ramp `{}`, the palette's ramps have more keys than the limit of {}",
                     name.text, self.limits.max_palette_colors
                 ),
             ));
@@ -860,7 +860,7 @@ impl<'a> Parser<'a, '_> {
                         }
                         let Some(k) = keys.iter().position(|&c| c == key) else {
                             // Past the cap, the message is not even formatted.
-                            if !self.errors.is_full() {
+                            if self.errors.keeps(Some(row.at(x))) {
                                 self.errors.push(Error::at(
                                     row.at(x),
                                     ErrorCode::UnknownName,

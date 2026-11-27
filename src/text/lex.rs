@@ -54,7 +54,12 @@ impl<'a> Node<'a> {
 /// Splits `text` into a tree of lines. Errors are appended to `errors`; the lines
 /// they concern are left out.
 /// Positions name `file`, the index of the text among the files of a parse.
-pub(crate) fn lex<'a>(text: &'a str, file: u32, errors: &mut Errors) -> Vec<Node<'a>> {
+pub(crate) fn lex<'a>(
+    text: &'a str,
+    file: u32,
+    max_roots: usize,
+    errors: &mut Errors,
+) -> Vec<Node<'a>> {
     let mut roots: Vec<Node<'a>> = Vec::new();
     // The open nodes, outermost first.
     let mut stack: Vec<Node<'a>> = Vec::new();
@@ -69,6 +74,11 @@ pub(crate) fn lex<'a>(text: &'a str, file: u32, errors: &mut Errors) -> Vec<Node
             .is_some_and(|open| open.line.indent >= line.indent)
         {
             close(&mut stack, &mut roots);
+        }
+        // Past `max_roots` definitions, the rest of the text is not lexed: the parser
+        // reports the first definition past the limit.
+        if stack.is_empty() && roots.len() > max_roots {
+            break;
         }
         let siblings = match stack.last() {
             Some(parent) => &parent.children,
@@ -200,6 +210,7 @@ mod tests {
         let nodes = lex(
             "a 1 ; comment\n  b\n    c\n    d\n  e\n\n   ; only a comment\nf\r\n  g(1, 2) h\n",
             0,
+            usize::MAX,
             &mut errors,
         );
         assert!(errors.iter().next().is_none(), "{errors:?}");
@@ -213,7 +224,7 @@ mod tests {
     #[test]
     fn columns_count_characters() {
         let mut errors = crate::error::Errors::default();
-        let nodes = lex("é ü x", 0, &mut errors);
+        let nodes = lex("é ü x", 0, usize::MAX, &mut errors);
         let x = nodes[0].line.tokens[2];
         assert_eq!(x.pos.column, 5);
     }
@@ -221,7 +232,7 @@ mod tests {
     #[test]
     fn reports_bad_indentation() {
         let mut errors = crate::error::Errors::default();
-        let nodes = lex(" a\nb\n    c\n  d\n\te\n", 0, &mut errors);
+        let nodes = lex(" a\nb\n    c\n  d\n\te\n", 0, usize::MAX, &mut errors);
         let found: Vec<(usize, usize)> = errors
             .iter()
             .map(|e| (e.position.unwrap().line, e.position.unwrap().column))

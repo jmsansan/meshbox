@@ -34,7 +34,9 @@ land, see the table below). The same text gives the same bytes on every platform
 ## Limits
 
 `Limits` bounds the work any input can cause. Every parsing function takes one;
-the defaults suit hand-written files and untrusted input.
+the defaults suit hand-written files and untrusted input. Parsing takes memory in
+proportion to the text, which `max_text_bytes` bounds, and keeps the first 1000
+errors by position.
 
 | Limit | Default | Bounds |
 | --- | --- | --- |

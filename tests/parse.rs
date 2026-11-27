@@ -211,3 +211,43 @@ fn many_options_are_refused_quickly() {
     assert_eq!(errors[0].code, ErrorCode::Syntax);
     assert!(start.elapsed() < Duration::from_secs(2));
 }
+
+#[test]
+fn the_first_error_survives_the_cap() {
+    let mut text = String::from("bogus\n");
+    for _ in 0..1500 {
+        text.push_str("\tx\n");
+    }
+    let errors = check(&text);
+    assert_eq!(errors.len(), 1000);
+    assert_eq!(errors[0].position.unwrap().line, 1);
+    assert_eq!(Document::parse(&text).unwrap_err(), errors[0]);
+}
+
+#[test]
+fn lexing_stops_past_the_definition_limit() {
+    // Valid definitions, so that the limit is the only error.
+    let text: String = (0..240_000).map(|i| format!("palette p{i}\n")).collect();
+    let start = Instant::now();
+    let errors = check(&text);
+    assert!(errors.iter().any(|e| e.code == ErrorCode::LimitExceeded));
+    assert!(start.elapsed() < Duration::from_secs(5));
+}
+
+#[test]
+fn many_ramps_are_refused_quickly() {
+    let mut text = String::from("palette p\n");
+    for i in 0..100_000u32 {
+        let a = char::from_u32(0x1_0000 + 2 * i).unwrap();
+        let b = char::from_u32(0x1_0001 + 2 * i).unwrap();
+        text.push_str(&format!("  ramp r{i} {a}{b}\n"));
+    }
+    let start = Instant::now();
+    let errors = check(&text);
+    assert!(errors.iter().any(|e| e.code == ErrorCode::LimitExceeded));
+    assert!(
+        start.elapsed() < Duration::from_secs(5),
+        "{:?}",
+        start.elapsed()
+    );
+}

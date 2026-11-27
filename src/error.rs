@@ -164,24 +164,67 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// nothing a person can act on, and keeping them would cost memory without bound.
 pub(crate) const MAX_ERRORS: usize = 1000;
 
-/// The errors of a parse, at most [`MAX_ERRORS`]; later ones are dropped.
+/// The errors of a parse: the first [`MAX_ERRORS`] by position, whatever order they
+/// are found in, so that the first error of the text is always among them.
 #[derive(Debug, Default)]
-pub(crate) struct Errors(Vec<Error>);
+pub(crate) struct Errors {
+    /// A max-heap by position and order found, so that the last is cheap to drop.
+    heap: std::collections::BinaryHeap<Ranked>,
+    found: u64,
+}
+
+#[derive(Debug)]
+struct Ranked {
+    key: (Option<Position>, u64),
+    error: Error,
+}
+
+impl PartialEq for Ranked {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key
+    }
+}
+impl Eq for Ranked {}
+impl PartialOrd for Ranked {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for Ranked {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.key.cmp(&other.key)
+    }
+}
 
 impl Errors {
     pub(crate) fn push(&mut self, error: Error) {
-        if self.0.len() < MAX_ERRORS {
-            self.0.push(error);
+        if !self.keeps(error.position) {
+            return;
+        }
+        let key = (error.position, self.found);
+        self.found += 1;
+        self.heap.push(Ranked { key, error });
+        if self.heap.len() > MAX_ERRORS {
+            self.heap.pop();
         }
     }
-    pub(crate) fn is_full(&self) -> bool {
-        self.0.len() >= MAX_ERRORS
+    /// Whether an error at `position` would be kept: callers skip formatting the
+    /// message of one that would not.
+    pub(crate) fn keeps(&self, position: Option<Position>) -> bool {
+        self.heap.len() < MAX_ERRORS || self.heap.peek().is_some_and(|last| position < last.key.0)
     }
     #[cfg(test)]
-    pub(crate) fn iter(&self) -> std::slice::Iter<'_, Error> {
-        self.0.iter()
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &Error> {
+        let mut all: Vec<&Ranked> = self.heap.iter().collect();
+        all.sort();
+        all.into_iter().map(|r| &r.error)
     }
+    /// The errors, ordered by position and, at one position, in the order found.
     pub(crate) fn into_vec(self) -> Vec<Error> {
-        self.0
+        self.heap
+            .into_sorted_vec()
+            .into_iter()
+            .map(|r| r.error)
+            .collect()
     }
 }
