@@ -266,7 +266,9 @@ pub struct Export {
 }
 
 impl Export {
-    /// Each model's name and mesh, in definition order.
+    /// Each model's name and mesh, in the order exported: definition order for
+    /// [`Document::export`], the order of the names for
+    /// [`Document::export_models_with`].
     pub fn meshes(&self) -> impl Iterator<Item = (&str, &Mesh)> {
         self.models.iter().map(|(n, m)| (n.as_str(), m))
     }
@@ -276,9 +278,9 @@ impl Export {
         self.png.as_deref()
     }
 
-    /// Each model as binary glTF, `model-NAME.glb`, in definition order. Each file is
-    /// built when the iterator reaches it, so that writing them one by one keeps one
-    /// in memory at a time.
+    /// Each model as binary glTF, `model-NAME.glb`, in the order of
+    /// [`Export::meshes`]. Each file is built when the iterator reaches it, so that
+    /// writing them one by one keeps one in memory at a time.
     pub fn glb_files(&self) -> impl Iterator<Item = Result<(String, Vec<u8>)>> + '_ {
         self.models.iter().map(|(name, mesh)| {
             let bytes = gltf::glb(&[gltf::Part { name, mesh }], self.png.as_deref())?;

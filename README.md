@@ -58,7 +58,8 @@ meshbox needs Rust 1.85 or later.
 ```rust
 use meshbox::{Document, PreviewOptions};
 
-let text = "\
+fn main() -> Result<(), meshbox::Error> {
+    let text = "\
 palette crate
   w #94643a
   k #3b2417
@@ -71,12 +72,13 @@ voxels box 2x2x2 palette=crate
     ww
     ww
 ";
-let document = Document::parse(text)?;
-let glb = document.glb("box")?;
-assert_eq!(&glb[..4], b"glTF");
-let preview = document.preview(&PreviewOptions::default())?;
-assert!(preview.width() > 0);
-# Ok::<(), meshbox::Error>(())
+    let document = Document::parse(text)?;
+    let glb = document.glb("box")?;
+    assert_eq!(&glb[..4], b"glTF");
+    let preview = document.preview(&PreviewOptions::default())?;
+    assert!(preview.width() > 0);
+    Ok(())
+}
 ```
 
 ## The text format
@@ -214,14 +216,16 @@ text.
 ```rust
 use meshbox::{Document, Error, ErrorCode, Limits};
 
-let mut loader = |name: &str| match name {
-    "palettes.meshbox" => Ok("palette p\n  a #ffffff\n".to_owned()),
-    _ => Err(Error::new(ErrorCode::Io, format!("no file {name}"))),
-};
-let text = "import palettes.meshbox\nvoxels dot 1x1x1 palette=p\n  level 0\n    a\n";
-let document = Document::parse_with_loader(text, &Limits::default(), &mut loader)?;
-assert!(document.model("dot").is_some());
-# Ok::<(), Error>(())
+fn main() -> Result<(), Error> {
+    let mut loader = |name: &str| match name {
+        "palettes.meshbox" => Ok("palette p\n  a #ffffff\n".to_owned()),
+        _ => Err(Error::new(ErrorCode::Io, format!("no file {name}"))),
+    };
+    let text = "import palettes.meshbox\nvoxels dot 1x1x1 palette=p\n  level 0\n    a\n";
+    let document = Document::parse_with_loader(text, &Limits::default(), &mut loader)?;
+    assert!(document.model("dot").is_some());
+    Ok(())
+}
 ```
 
 Parsing and rendering never touch the file system: imports go through the loader,
