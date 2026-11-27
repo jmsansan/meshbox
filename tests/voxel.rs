@@ -211,3 +211,30 @@ fn palettes_too_large_for_a_model_are_refused() {
     assert_eq!(errors.len(), 1);
     assert_eq!(errors[0].code, ErrorCode::LimitExceeded);
 }
+
+#[test]
+fn extra_rows_still_have_their_keys_checked() {
+    let p = "palette p\n  a #ffffff\n";
+    assert_eq!(
+        codes(&format!(
+            "{p}voxels m 1x1x1 palette=p\n  level 0\n    a\n    z\n"
+        )),
+        [
+            (6, 5, ErrorCode::SizeMismatch),
+            (6, 5, ErrorCode::UnknownName)
+        ]
+    );
+}
+
+#[test]
+fn raised_limits_cannot_overflow_the_allocation() {
+    let limits = Limits {
+        max_voxel_side: u32::MAX,
+        max_voxels: u64::MAX,
+        ..Limits::default()
+    };
+    let text = "palette p\n  a #ffffff\nvoxels m 4194304x2097152x2097152 palette=p\n";
+    let errors = check_with(text, &limits);
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].code, ErrorCode::LimitExceeded);
+}

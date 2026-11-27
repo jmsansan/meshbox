@@ -17,6 +17,9 @@ const DIRECTIVES: &str = "`palette` or `voxels`";
 /// More options than any directive takes, so that checking for duplicates stays cheap.
 const MAX_OPTIONS: usize = 16;
 
+/// The longest name, so that messages and lookups that copy names stay small.
+const MAX_NAME: usize = 64;
+
 /// Directives of spritebox that meshbox does not read (#7).
 const SPRITEBOX_DIRECTIVES: &[&str] = &[
     "sprite",
@@ -209,6 +212,12 @@ fn check_name(token: Token) -> Parsed<()> {
         .text
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+    if token.text.len() > MAX_NAME {
+        return Err(token.error(
+            ErrorCode::InvalidArgument,
+            format!("A name is at most {MAX_NAME} characters"),
+        ));
+    }
     if !valid || token.text.is_empty() {
         return Err(token.error(
             ErrorCode::Syntax,
@@ -371,7 +380,9 @@ impl<'a> Parser<'a, '_> {
         if let Some(from) = from {
             check_name(from)?;
         }
-        let _lint = header.option("lint");
+        if let Some(lint) = header.option("lint") {
+            lint_option(lint)?;
+        }
         let name = header.name;
         header.finish("palette", "`from=`")?;
         let mut colors: Vec<(char, Color)> = Vec::new();
@@ -637,6 +648,20 @@ impl<'a> Parser<'a, '_> {
             }
         });
         self.voxels = self.voxels.saturating_add(cells);
+        // Two bytes a cell must fit in memory too, whatever the limits say.
+        let fits = usize::try_from(cells)
+            .ok()
+            .and_then(|c| c.checked_mul(2))
+            .is_some_and(|bytes| bytes <= isize::MAX as usize);
+        if !fits {
+            return Err(size_token.error(
+                ErrorCode::LimitExceeded,
+                format!(
+                    "Model `{}` has more voxels than this platform can hold",
+                    name.text
+                ),
+            ));
+        }
         if self.voxels > self.limits.max_voxels {
             return Err(size_token.error(
                 ErrorCode::LimitExceeded,
@@ -762,9 +787,7 @@ impl<'a> Parser<'a, '_> {
                 ));
                 continue;
             }
-            if count <= depth as usize {
-                rows.push((count - 1, row));
-            }
+            rows.push((count - 1, row));
         }
         if count < depth as usize {
             self.errors.push(node.line.first().error(
@@ -844,6 +867,11 @@ impl<'a> Parser<'a, '_> {
                         };
                         // A fully transparent key is empty space, as `.` is.
                         if palette.keys[k].1.a == 0 {
+                            continue;
+                        }
+                        // Rows past the depth are an error already; their keys are still
+                        // checked.
+                        if z >= d as usize {
                             continue;
                         }
                         let i = ((*y as usize * d as usize) + z) * w as usize + x;
@@ -1073,4 +1101,65 @@ fn palette_key(token: Token) -> Parsed<char> {
         ));
     }
     Ok(key)
+}
+
+/// spritebox's lint codes, which `lint=allow(CODE,...)` on a palette may name.
+const LINT_CODES: &[&str] = &[
+    "orphan_pixel",
+    "jaggy",
+    "double_outline",
+    "stray_alpha",
+    "pillow_shading",
+    "banding",
+    "mixel",
+    "too_many_colors",
+    "inconsistent_size",
+    "inconsistent_outline",
+    "inconsistent_palette",
+    "inconsistent_scale",
+    "near_duplicate_color",
+    "flat_ramp",
+    "low_contrast",
+    "unused_key",
+    "screen_bounds",
+    "screen_overlap",
+    "off_grid",
+    "background_clipped",
+];
+
+/// Checks spritebox's `lint=allow(CODE,...)`, which has no effect in meshbox, as
+/// spritebox checks it, so that a palette file valid here is valid there.
+fn lint_option(token: Token) -> Parsed<()> {
+    let invalid = || {
+        token.error(
+            ErrorCode::Syntax,
+            format!("Expected `lint=allow(CODE,...)`, not `lint={}`", token.text),
+        )
+    };
+    let inner = token
+        .text
+        .strip_prefix("allow(")
+        .and_then(|t| t.strip_suffix(')'))
+        .ok_or_else(invalid)?;
+    let mut offset = "allow(".len();
+    for part in inner.split(',') {
+        let lead = part.chars().take_while(|c| *c == ' ').count();
+        let name = part.trim();
+        let pos = token.at(offset + lead);
+        if name.is_empty() {
+            return Err(Error::at(pos, ErrorCode::Syntax, "Expected a lint code"));
+        }
+        if !LINT_CODES.contains(&name) {
+            return Err(Error::at(
+                pos,
+                ErrorCode::Syntax,
+                format!(
+                    "Unknown lint `{name}`; expected one of {}",
+                    LINT_CODES.join(", ")
+                ),
+            ));
+        }
+        offset += part.chars().count() + 1;
+    }
+    Ok(())
 }

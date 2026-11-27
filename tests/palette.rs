@@ -190,3 +190,23 @@ fn ramps_are_checked_as_spritebox_checks_them() {
     let ramps = doc.palette("q").unwrap().ramps();
     assert_eq!(ramps, [("shade".to_owned(), vec!['b', 'c'])]);
 }
+
+#[test]
+fn lint_options_are_checked_as_spritebox_checks_them() {
+    assert!(check("palette p lint=allow(orphan_pixel, flat_ramp)\n").is_empty());
+    assert_eq!(at("palette p lint=bogus\n"), [(1, 16, ErrorCode::Syntax)]);
+    assert_eq!(
+        at("palette p lint=allow(nope)\n"),
+        [(1, 22, ErrorCode::Syntax)]
+    );
+}
+
+#[test]
+fn names_are_short() {
+    let long = "n".repeat(65);
+    assert_eq!(
+        at(&format!("palette {long}\n")),
+        [(1, 9, ErrorCode::InvalidArgument)]
+    );
+    assert!(check(&format!("palette {}\n", "n".repeat(64))).is_empty());
+}
