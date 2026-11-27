@@ -190,13 +190,33 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
 /// `\\?\` prefix that canonical paths have (`//server/share` for a network path).
 fn import_name(path: &Path) -> String {
     let text = path.to_string_lossy().replace('\\', "/");
-    if let Some(unc) = text.strip_prefix("//?/UNC/") {
+    let text = if let Some(unc) = text.strip_prefix("//?/UNC/") {
         format!("//{unc}")
     } else if let Some(local) = text.strip_prefix("//?/") {
         local.to_owned()
     } else {
         text
+    };
+    // `.` and `..` resolved by name, as imports are, so that names compare equal.
+    let (root, rest) = if let Some(rest) = text.strip_prefix("//") {
+        ("//", rest)
+    } else if let Some(rest) = text.strip_prefix('/') {
+        ("/", rest)
+    } else {
+        ("", text.as_str())
+    };
+    let mut parts: Vec<&str> = Vec::new();
+    for part in rest.split('/') {
+        match part {
+            "" | "." => {}
+            ".." if parts.len() > 1 || (root == "/" && !parts.is_empty()) => {
+                parts.pop();
+            }
+            ".." => {}
+            _ => parts.push(part),
+        }
     }
+    format!("{root}{}", parts.join("/"))
 }
 
 /// A file name of the parse as it is shown: relative to the file given when it is

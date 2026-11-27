@@ -659,3 +659,30 @@ fn review_cases_twelve() {
 fn an_empty_file_argument_is_bad_usage() {
     assert_eq!(status(&meshbox(&["check", ""])), 2);
 }
+
+#[test]
+fn names_shown_from_a_parent_path_stay_relative() {
+    let d = dir("parent");
+    std::fs::create_dir_all(d.join("build")).unwrap();
+    std::fs::write(d.join("scene.meshbox"), "import palette.meshbox\n").unwrap();
+    std::fs::write(d.join("palette.meshbox"), "palette p\n  a #ff\n").unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_meshbox"))
+        .args(["check", "../scene.meshbox", "--json"])
+        .current_dir(d.join("build"))
+        .output()
+        .unwrap();
+    assert_eq!(status(&output), 1);
+    let doc = json::parse(String::from_utf8(output.stdout).unwrap().trim());
+    let file = doc.get("diagnostics").at(0).get("file").str().to_owned();
+    assert!(!std::path::Path::new(&file).is_absolute(), "{file}");
+    assert!(file.ends_with("palette.meshbox"), "{file}");
+    // A stray quote inside a name is a syntax error.
+    std::fs::write(d.join("quote.meshbox"), "import palettes\".meshbox\n").unwrap();
+    assert_eq!(
+        status(&meshbox(&[
+            "check",
+            d.join("quote.meshbox").to_str().unwrap()
+        ])),
+        1
+    );
+}
