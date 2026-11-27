@@ -16,11 +16,15 @@ fn main() -> ExitCode {
     {
         Ok(args) => args,
         Err(_) => {
-            cli::warn(&format!(
+            let printed = cli::warn(&format!(
                 "meshbox: arguments must be valid Unicode\n\n{}",
                 cli::USAGE
             ));
-            return ExitCode::from(cli::EXIT_USAGE);
+            return ExitCode::from(if printed {
+                cli::EXIT_USAGE
+            } else {
+                cli::EXIT_IO
+            });
         }
     };
     cli::run(&args)

@@ -375,7 +375,7 @@ fn review_cases_two() {
     let output = meshbox(&["check", uses_bad.to_str().unwrap()]);
     assert_eq!(status(&output), 1);
     assert!(
-        String::from_utf8_lossy(&output.stderr).contains("line 2, column 8"),
+        String::from_utf8_lossy(&output.stderr).contains("bad.meshbox:2:8: error[syntax]"),
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
@@ -436,4 +436,39 @@ fn review_cases_three() {
     std::fs::write(&scene, VALID).unwrap();
     let output = meshbox(&["render", scene.to_str().unwrap(), "--out", "--json"]);
     assert_eq!(status(&output), 2);
+}
+
+#[test]
+fn review_cases_four() {
+    let d = dir("review-four");
+    // An absolute spelling of the file given is a cycle.
+    let a = d.join("a.meshbox");
+    let absolute = std::fs::canonicalize(&d).unwrap().join("a.meshbox");
+    let spelled = absolute.to_str().unwrap().replace('\\', "/");
+    let spelled = spelled.strip_prefix("//?/").unwrap_or(&spelled);
+    std::fs::write(&a, format!("import \"{spelled}\"\n")).unwrap();
+    let output = meshbox(&["check", a.to_str().unwrap(), "--json"]);
+    let doc = json::parse(String::from_utf8(output.stdout).unwrap().trim());
+    assert_eq!(doc.get("diagnostics").len(), 1);
+    assert_eq!(doc.get("diagnostics").at(0).get("code").str(), "cycle");
+}
+
+/// Render does not write through a symbolic link.
+#[cfg(unix)]
+#[test]
+fn render_does_not_follow_links() {
+    let d = dir("links");
+    let scene = d.join("scene.meshbox");
+    std::fs::write(&scene, VALID).unwrap();
+    let out = d.join("out");
+    std::fs::create_dir_all(&out).unwrap();
+    std::os::unix::fs::symlink(out.join("model-cube.glb"), out.join("preview.png")).unwrap();
+    let output = meshbox(&[
+        "render",
+        scene.to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
+    ]);
+    assert_eq!(status(&output), 2);
+    assert!(!out.join("model-cube.glb").exists());
 }

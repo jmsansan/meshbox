@@ -34,7 +34,7 @@ Exit status: 0 success, 1 the file has errors, 2 bad usage, 3 an I/O error.";
 /// Exit statuses, stable for scripts and assistants.
 const EXIT_INVALID: u8 = 1;
 pub const EXIT_USAGE: u8 = 2;
-const EXIT_IO: u8 = 3;
+pub const EXIT_IO: u8 = 3;
 
 struct Options {
     command: String,
@@ -205,6 +205,7 @@ fn execute(options: &Options) -> ExitCode {
         base: base_dir(options),
         cache: HashMap::new(),
         files: HashMap::new(),
+        root: None,
         limit: max,
         // What imports may add to the text: the rest of the limit.
         budget: max - text.len(),
@@ -212,7 +213,8 @@ fn execute(options: &Options) -> ExitCode {
     };
     if options.file != "-" {
         if let Ok(path) = std::fs::canonicalize(&options.file) {
-            loader.files.insert(path, root_name.clone());
+            loader.files.insert(path.clone(), root_name.clone());
+            loader.root = Some(path);
         }
     }
     let parsed = {
@@ -256,6 +258,8 @@ struct FileLoader {
     cache: HashMap<String, meshbox::Result<String>>,
     /// The name each file on disk was first read under.
     files: HashMap<PathBuf, String>,
+    /// The file given, on disk.
+    root: Option<PathBuf>,
     /// The limit of the text with its imports.
     limit: usize,
     /// The bytes that imports may still add, so that no more is ever held.
@@ -284,6 +288,13 @@ impl FileLoader {
         // system that ignores case, would be read and defined twice.
         let real = std::fs::canonicalize(&path).map_err(io)?;
         if let Some(first) = self.files.get(&real) {
+            // The file given is always among the files importing this one.
+            if self.root.as_ref() == Some(&real) {
+                return Err(Error::new(
+                    ErrorCode::Cycle,
+                    format!("It is `{first}`, the file given, which imports itself"),
+                ));
+            }
             return Err(Error::new(
                 ErrorCode::DuplicateName,
                 format!("It is the file `{first}` under another name"),
@@ -394,15 +405,23 @@ fn render(
         .chain(files.iter().map(|(n, _)| n.clone()));
     for name in outputs {
         let path = out.join(name);
-        if let Ok(real) = std::fs::canonicalize(&path) {
-            if inputs.contains(&real) {
-                let message = format!("Writing {} would replace an input", path.display());
-                return Err((
-                    Error::new(ErrorCode::InvalidArgument, message),
-                    EXIT_USAGE,
-                    Vec::new(),
-                ));
-            }
+        // Nor write through a link, which could lead to another output or an input.
+        let link = std::fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_symlink());
+        let input = std::fs::canonicalize(&path).is_ok_and(|real| inputs.contains(&real));
+        if link || input {
+            let message = if link {
+                format!(
+                    "{} is a symbolic link; it is not written through",
+                    path.display()
+                )
+            } else {
+                format!("Writing {} would replace an input", path.display())
+            };
+            return Err((
+                Error::new(ErrorCode::InvalidArgument, message),
+                EXIT_USAGE,
+                Vec::new(),
+            ));
         }
     }
     for file in export.glb_files() {

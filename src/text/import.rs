@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::lex;
 use crate::error::Errors;
-use crate::{Error, ErrorCode, Limits, Result};
+use crate::{Error, ErrorCode, Limits, Position, Result};
 
 /// The longest name an import may resolve to.
 const MAX_NAME_BYTES: usize = 1024;
@@ -160,6 +160,24 @@ impl Files {
                     stack.push(i);
                     self.visit(i, stack, loading);
                     stack.pop();
+                }
+                // An error at a place in the file, as text that is not UTF-8, is
+                // reported there: the file gets a name and no text.
+                Err(Error {
+                    position: Some(p),
+                    code,
+                    message,
+                    ..
+                }) => {
+                    let i = self.names.len() as u32;
+                    self.names.push(name.clone());
+                    self.texts.push(String::new());
+                    loading.errors.push(Error::at(
+                        Position::in_file(i, p.line, p.column),
+                        code,
+                        message,
+                    ));
+                    self.failed.insert(name);
                 }
                 Err(e) => {
                     loading

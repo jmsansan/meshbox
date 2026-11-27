@@ -184,7 +184,9 @@ fn a_loader_error_keeps_its_position() {
     };
     let errors = check_with_loader("import bad.meshbox\n", &Limits::default(), &mut loader);
     assert_eq!(errors.len(), 1);
-    assert!(errors[0].message.contains("line 2, column 5"), "{errors:?}");
+    assert_eq!(errors[0].file.as_deref(), Some("bad.meshbox"), "{errors:?}");
+    let p = errors[0].position.unwrap();
+    assert_eq!((p.line, p.column), (2, 5));
 }
 
 #[test]
