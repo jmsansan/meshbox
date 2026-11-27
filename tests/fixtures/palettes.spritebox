@@ -1,0 +1,22 @@
+; The palettes of spritebox's examples/showcase.spritebox, copied unchanged, and a
+; ramp made from a base color as spritebox's ramps are. Valid in both crates.
+
+palette field
+  .  transparent
+  k  #1a1c2c   ; ink
+  w  #f4f4f4
+  g  #38b764   ; leaf
+  G  #a7f070
+  b  #5d275d   ; body, dark to light
+  p  #b13e53
+  P  #ef7d57
+  o  #f4b41b   ; gold
+  y  #ffe478
+  c  #41a6f6   ; sky
+
+palette dusk from=field
+  p  #3b5dc9
+  P  #73eff7
+
+palette clay lint=allow(orphan_pixel)
+  ramp skin abcde base=#d08159

@@ -10,8 +10,21 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+mod document;
 mod error;
+mod image;
+#[allow(dead_code)]
+mod json;
 mod limits;
+mod oklab;
+mod palette;
+pub mod png;
+mod text;
+mod voxel;
 
+pub use document::{Document, check, check_with};
 pub use error::{Error, ErrorCode, Position, Result};
+pub use image::{Color, Image};
 pub use limits::Limits;
+pub use palette::{Palette, PaletteTexture};
+pub use voxel::VoxelModel;

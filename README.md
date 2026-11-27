@@ -17,9 +17,9 @@ land, see the table below). The same text gives the same bytes on every platform
 
 | Capability | Status |
 | --- | --- |
-| Text format with exact diagnostics (line, column, stable code) | Planned (0.1) |
-| Palettes with spritebox's syntax, shared palette texture | Planned (0.1) |
-| Voxel models from stacked grids | Planned (0.1) |
+| Text format with exact diagnostics (line, column, stable code) | Available |
+| Palettes with spritebox's syntax, shared palette texture | Available |
+| Voxel models from stacked grids | Available |
 | Greedy meshing to a deterministic mesh | Planned (0.1) |
 | Binary glTF (`.glb`) export | Planned (0.1) |
 | Four-view preview sheet (PNG) | Planned (0.1) |
@@ -34,7 +34,9 @@ land, see the table below). The same text gives the same bytes on every platform
 ## Limits
 
 `Limits` bounds the work any input can cause. Every parsing function takes one;
-the defaults suit hand-written files and untrusted input.
+the defaults suit hand-written files and untrusted input. Parsing takes memory in
+proportion to the text, which `max_text_bytes` bounds, and keeps the first 1000
+errors by position.
 
 | Limit | Default | Bounds |
 | --- | --- | --- |
