@@ -37,7 +37,7 @@ pub(crate) fn quads(
     // Sizes along X, Y and Z.
     let dims = [w as i32, h as i32, d as i32];
     // The step in `cells` along X, Y and Z.
-    let stride = [1, (w * d) as usize, w as usize];
+    let stride = [1, w as usize * d as usize, w as usize];
     // Whether the face of a voxel of `cell` against a neighbor of `other` shows.
     let visible = |cell: u16, other: u16| -> bool {
         if cell == 0 {
