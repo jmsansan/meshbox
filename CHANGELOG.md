@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 (2026-11-27)
+
+The first release: voxel models from text to glTF and a preview sheet.
 
 - Crate skeleton: `Error`, `ErrorCode`, `Position` and `Limits`, a `meshbox` binary,
   and CI for Linux, macOS, Windows, WebAssembly and the minimum Rust version, with a
@@ -43,3 +45,6 @@
   `model-NAME.glb` per model, `palette.png`, `preview.png` and `meshbox.json`, and
   nothing when the file has errors. `-` reads standard input. Exit statuses: 0
   success, 1 errors in the file, 2 bad usage, 3 I/O errors.
+- The README in full, `examples/showcase.meshbox` (a toadstool, a treasure chest and a
+  fence post sharing one palette) and its preview in `docs/showcase-preview.png`; a
+  test keeps the README's examples valid and the committed preview current.

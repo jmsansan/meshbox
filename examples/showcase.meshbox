@@ -1,0 +1,170 @@
+; The meshbox showcase: three props for a small forest game, sharing one palette.
+; One voxel is 1/16 m, as in Diamon's sprites; each model's pivot is at its feet.
+
+palette props
+  k #3b2417   ; dark wood
+  w #6b4423   ; wood
+  W #94643a   ; light wood
+  m #5c6370   ; iron
+  M #8f97a3   ; light iron
+  g #e8b830   ; gold
+  r #a8322a   ; cap
+  R #d24a3a   ; cap, lit
+  s #f2e8d0   ; spots and stem
+  S #d2c2a0   ; stem, shaded
+  G #4f8a3a   ; grass
+
+; A toadstool: a stem in a tuft of grass, and a domed cap with pale spots.
+voxels mushroom 7x7x8 palette=props
+  level 0
+    .......
+    ...G...
+    ..SsS..
+    .GsssG.
+    ..SsS..
+    ...G...
+    .......
+  level 1
+    .......
+    .......
+    ..SsS..
+    ..sss..
+    ..SsS..
+    .......
+    .......
+  level 2
+    .......
+    .......
+    ..SsS..
+    ..sss..
+    ..SsS..
+    .......
+    .......
+  level 3
+    .......
+    .......
+    ..SsS..
+    ..sss..
+    ..SsS..
+    .......
+    .......
+  level 4
+    .rrrrr.
+    rrrrrrr
+    rrrrrrr
+    rrrrrrr
+    rrrrrrr
+    rrrrrrr
+    .rrrrr.
+  level 5
+    .RRRRR.
+    RRsRRRR
+    RRRRRsR
+    RRRRRRR
+    RsRRRRR
+    RRRRsRR
+    .RRRRR.
+  level 6
+    .......
+    .RRRRR.
+    .RsRRR.
+    .RRRRR.
+    .RRRsR.
+    .RRRRR.
+    .......
+  level 7
+    .......
+    .......
+    ..RsR..
+    ..RRR..
+    ..RRR..
+    .......
+    .......
+
+; A treasure chest: a wooden box with iron bands, a gold lock and a rounded lid.
+voxels chest 8x6x6 palette=props
+  level 0
+    kkkkkkkk
+    kkkkkkkk
+    kkkkkkkk
+    kkkkkkkk
+    kkkkkkkk
+    kkkkkkkk
+  level 1
+    wmwwwwmw
+    wmwwwwmw
+    wmwwwwmw
+    wmwwwwmw
+    wmwwwwmw
+    wmwwwwmw
+  level 2
+    wmwwwwmw
+    wmwwwwmw
+    wmwwwwmw
+    wmwwwwmw
+    wmwwwwmw
+    wmwggwmw
+  level 3
+    kmkkkkmk
+    kmkkkkmk
+    kmkkkkmk
+    kmkkkkmk
+    kmkkkkmk
+    kmkggkmk
+  level 4
+    WMWWWWMW
+    WMWWWWMW
+    WMWWWWMW
+    WMWWWWMW
+    WMWWWWMW
+    WMWWWWMW
+  level 5
+    ........
+    WMWWWWMW
+    WMWWWWMW
+    WMWWWWMW
+    WMWWWWMW
+    ........
+
+; A fence post with bevelled corners and a pointed cap.
+voxels fence_post 3x3x10 palette=props
+  level 0
+    kwk
+    www
+    kwk
+  level 1
+    kwk
+    www
+    kwk
+  level 2
+    kwk
+    www
+    kwk
+  level 3
+    kwk
+    www
+    kwk
+  level 4
+    kwk
+    www
+    kwk
+  level 5
+    kwk
+    www
+    kwk
+  level 6
+    kwk
+    www
+    kwk
+  level 7
+    kwk
+    www
+    kwk
+  level 8
+    kWk
+    WWW
+    kWk
+  level 9
+    .k.
+    kWk
+    .k.
