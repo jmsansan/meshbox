@@ -47,13 +47,12 @@ struct Options {
 
 pub fn run(args: &[String]) -> ExitCode {
     if args.is_empty() || args.iter().any(|a| a == "-h" || a == "--help") || args[0] == "help" {
-        let printed = say(USAGE);
-        return if args.is_empty() {
-            ExitCode::from(EXIT_USAGE)
-        } else if printed {
-            ExitCode::SUCCESS
-        } else {
+        return if !say(USAGE) {
             ExitCode::from(EXIT_IO)
+        } else if args.is_empty() {
+            ExitCode::from(EXIT_USAGE)
+        } else {
+            ExitCode::SUCCESS
         };
     }
     if args.len() == 1 && (args[0] == "-V" || args[0] == "--version") {
@@ -66,8 +65,8 @@ pub fn run(args: &[String]) -> ExitCode {
     let options = match parse_args(args) {
         Ok(options) => options,
         Err(message) => {
-            warn(&format!("meshbox: {message}\n\n{USAGE}"));
-            return ExitCode::from(EXIT_USAGE);
+            let printed = warn(&format!("meshbox: {message}\n\n{USAGE}"));
+            return ExitCode::from(if printed { EXIT_USAGE } else { EXIT_IO });
         }
     };
     execute(&options)
@@ -297,7 +296,7 @@ impl FileLoader {
             }
             return Err(Error::new(
                 ErrorCode::DuplicateName,
-                format!("It is the file `{first}` under another name"),
+                format!("It is the file `{first}`, imported under another name"),
             ));
         }
         self.files.insert(real, name.to_owned());

@@ -204,9 +204,14 @@ impl lex::Token<'_> {
 }
 
 /// The name of `name` imported from the file `from`: relative to `from`'s directory
-/// unless it starts with `/`, with `.` and `..` resolved, `/` between parts.
+/// unless it starts with `/` or a drive such as `C:`, with `.` and `..` resolved, `/`
+/// between parts.
 pub(crate) fn resolve(from: &str, name: &str) -> String {
-    let joined = if name.starts_with('/') {
+    let drive = |n: &str| {
+        let b = n.as_bytes();
+        b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':'
+    };
+    let joined = if name.starts_with('/') || drive(name) {
         name.to_owned()
     } else {
         match from.rfind('/') {
@@ -214,11 +219,14 @@ pub(crate) fn resolve(from: &str, name: &str) -> String {
             None => name.to_owned(),
         }
     };
+    // A drive is the first part, and `..` does not go above it.
+    let fixed = usize::from(drive(&joined));
     let mut parts: Vec<&str> = Vec::new();
     for part in joined.split('/') {
         match part {
             "" | "." => {}
-            ".." if parts.last().is_some_and(|p| *p != "..") => {
+            ".." if fixed == 1 && parts.len() == 1 => {}
+            ".." if parts.len() > fixed && parts.last().is_some_and(|p| *p != "..") => {
                 parts.pop();
             }
             _ => parts.push(part),
@@ -244,5 +252,8 @@ mod tests {
         assert_eq!(resolve("art/a.meshbox", "../c.meshbox"), "c.meshbox");
         assert_eq!(resolve("a.meshbox", "../../c"), "../../c");
         assert_eq!(resolve("art/a", "/abs/x"), "/abs/x");
+        assert_eq!(resolve("parts/p", "C:/shared/c"), "C:/shared/c");
+        assert_eq!(resolve("C:/shared/c", "d"), "C:/shared/d");
+        assert_eq!(resolve("C:/c", "../../d"), "C:/d");
     }
 }
