@@ -1,6 +1,10 @@
 //! The text format: definitions parsed from lines of words, then resolved.
 
+mod import;
 pub(crate) mod lex;
+
+use import::Files;
+pub(crate) use import::Loader;
 
 use std::collections::{HashMap, HashSet};
 
@@ -13,7 +17,7 @@ use lex::{Node, Token};
 
 type Parsed<T> = Result<T, Error>;
 
-const DIRECTIVES: &str = "`palette` or `voxels`";
+const DIRECTIVES: &str = "`import`, `palette` or `voxels`";
 
 /// More options than any directive takes, so that checking for duplicates stays cheap.
 const MAX_OPTIONS: usize = 16;
@@ -53,9 +57,13 @@ const SPRITEBOX_DIRECTIVES: &[&str] = &[
 /// Characters that cannot be palette keys, besides spaces and control characters.
 const RESERVED_KEYS: &[char] = &[';', '(', ')', ',', '='];
 
-/// Parses `text` and returns the document, or every error found, ordered by
-/// position.
-pub(crate) fn parse(text: &str, limits: &Limits) -> Result<Document, Vec<Error>> {
+/// Parses `text`, and the files it imports through `loader`, and returns the
+/// document, or every error found (up to the cap), ordered by file and position.
+pub(crate) fn parse(
+    text: &str,
+    limits: &Limits,
+    loader: Option<&mut Loader>,
+) -> Result<Document, Vec<Error>> {
     let mut errors = Errors::default();
     if text.len() > limits.max_text_bytes {
         return Err(vec![Error::at(
@@ -68,7 +76,13 @@ pub(crate) fn parse(text: &str, limits: &Limits) -> Result<Document, Vec<Error>>
             ),
         )]);
     }
-    let nodes = lex::lex(text, 0, limits.max_definitions, &mut errors);
+    let files = Files::load(text, limits, loader, &mut errors);
+    let lexed: Vec<Vec<Node>> = files
+        .texts
+        .iter()
+        .enumerate()
+        .map(|(i, t)| lex::lex(t, i as u32, limits.max_definitions, &mut errors))
+        .collect();
     let mut parser = Parser {
         limits,
         errors,
@@ -77,30 +91,62 @@ pub(crate) fn parse(text: &str, limits: &Limits) -> Result<Document, Vec<Error>>
         definitions: 0,
         voxels: 0,
     };
-    for node in &nodes {
+    // Imported definitions take the place of their `import`; each file once.
+    let mut walked = vec![false; lexed.len()];
+    walked[0] = true;
+    walk(&mut parser, &lexed, &files.targets, &mut walked, 0);
+    let document = parser.resolve();
+    let mut errors = parser.errors.into_vec();
+    for e in &mut errors {
+        if let Some(p) = e.position.filter(|p| p.file > 0) {
+            e.file = files.names.get(p.file as usize).cloned();
+        }
+    }
+    if errors.is_empty() {
+        Ok(document)
+    } else {
+        Err(errors)
+    }
+}
+
+/// Parses the definitions of `file`, and of the files it imports where they are
+/// imported. Returns false once the limit of definitions is passed.
+fn walk<'a>(
+    parser: &mut Parser<'a, '_>,
+    lexed: &[Vec<Node<'a>>],
+    targets: &HashMap<(u32, usize), u32>,
+    walked: &mut [bool],
+    file: u32,
+) -> bool {
+    for node in &lexed[file as usize] {
+        if node.keyword() == "import" {
+            let line = node.line.first().pos.line;
+            if let Some(&target) = targets.get(&(file, line)) {
+                if !walked[target as usize] {
+                    walked[target as usize] = true;
+                    if !walk(parser, lexed, targets, walked, target) {
+                        return false;
+                    }
+                }
+            }
+            continue;
+        }
         parser.definitions += 1;
-        if parser.definitions > limits.max_definitions {
+        if parser.definitions > parser.limits.max_definitions {
             parser.errors.push(node.line.first().error(
                 ErrorCode::LimitExceeded,
                 format!(
                     "More definitions than the limit of {}",
-                    limits.max_definitions
+                    parser.limits.max_definitions
                 ),
             ));
-            break;
+            return false;
         }
         if let Err(e) = parser.definition(node) {
             parser.errors.push(e);
         }
     }
-    let document = parser.resolve();
-    let mut errors = parser.errors.into_vec();
-    if errors.is_empty() {
-        Ok(document)
-    } else {
-        errors.sort_by_key(|e| e.position);
-        Err(errors)
-    }
+    true
 }
 
 /// A palette as written, before `from=` is resolved.

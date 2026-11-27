@@ -23,8 +23,8 @@ land, see the table below). The same text gives the same bytes on every platform
 | Greedy meshing to a deterministic mesh | Available |
 | Binary glTF (`.glb`) export | Available |
 | Four-view preview sheet (PNG) | Available |
-| Imports through a loader, in memory and in WebAssembly | Planned (0.1) |
-| Command-line tool: `check` and `render` | Planned (0.1) |
+| Imports through a loader, in memory and in WebAssembly | Available |
+| Command-line tool: `check` and `render` | Available |
 | Low-poly primitives, composition and modifiers | Planned (0.2) |
 | Heightmap terrain | Planned (0.3) |
 | Seeded generators and scattering | Planned (0.4) |
