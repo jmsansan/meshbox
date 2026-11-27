@@ -90,9 +90,12 @@ fn cover(v: [Vertex; 3], width: i64, height: i64, mut visit: impl FnMut(i64, i64
                 weights[k] = e;
             }
             if inside {
-                let z = (weights[0] * v[0][2] as i128
+                // Depth keeps 16 more bits than the vertices give it, so that two
+                // faces whose depths differ at a pixel do not round to a tie.
+                let z = ((weights[0] * v[0][2] as i128
                     + weights[1] * v[1][2] as i128
                     + weights[2] * v[2][2] as i128)
+                    << 16)
                     .div_euclid(area) as i64;
                 visit(px, py, z);
             }
@@ -117,12 +120,13 @@ fn pixel_at_or_above(x: i128) -> i64 {
 }
 
 impl Canvas {
-    pub fn new(image: Image) -> Self {
+    /// A canvas over `image`, or `None` when its depth buffer cannot be allocated.
+    pub fn new(image: Image) -> Option<Self> {
         let n = image.width() as usize * image.height() as usize;
-        Self {
-            image,
-            depth: vec![i64::MIN; n],
-        }
+        let mut depth = Vec::new();
+        depth.try_reserve_exact(n).ok()?;
+        depth.resize(n, i64::MIN);
+        Some(Self { image, depth })
     }
 
     /// Draws an opaque triangle where it is nearer than what is drawn.
@@ -196,8 +200,8 @@ mod tests {
     fn fragments_blend_far_to_near_whatever_the_order_found() {
         let red = Color::rgba(255, 0, 0, 128);
         let green = Color::rgba(0, 255, 0, 128);
-        let mut a = Canvas::new(Image::new(1, 1).unwrap());
-        let mut b = Canvas::new(Image::new(1, 1).unwrap());
+        let mut a = Canvas::new(Image::new(1, 1).unwrap()).unwrap();
+        let mut b = Canvas::new(Image::new(1, 1).unwrap()).unwrap();
         // Red is nearer (depth 5) than green (depth 2).
         a.blend_fragments(vec![(0, 5, red), (0, 2, green)]);
         b.blend_fragments(vec![(0, 2, green), (0, 5, red)]);
@@ -208,7 +212,7 @@ mod tests {
 
     #[test]
     fn triangles_sharing_an_edge_cover_each_pixel_once() {
-        let mut canvas = Canvas::new(Image::new(16, 16).unwrap());
+        let mut canvas = Canvas::new(Image::new(16, 16).unwrap()).unwrap();
         let s = SUBPIXEL;
         let (a, b, c, d) = (
             [0, 0, 0],
@@ -222,5 +226,19 @@ mod tests {
         }
         assert!(count.iter().all(|&n| n == 1), "{count:?}");
         canvas.opaque([a, b, c], Color::WHITE);
+    }
+
+    #[test]
+    fn interpolated_depth_keeps_fractions_of_a_unit() {
+        // Depth rises by one unit across 64 pixels: each pixel's depth differs.
+        let s = SUBPIXEL;
+        let t = [[0, 0, 0], [64 * s, 0, 1], [0, 64 * s, 0]];
+        let mut row = Vec::new();
+        cover(t, 64, 64, |x, y, z| {
+            if y == 0 {
+                row.push((x, z));
+            }
+        });
+        assert!(row.windows(2).all(|w| w[1].1 > w[0].1), "{row:?}");
     }
 }

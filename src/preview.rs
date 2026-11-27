@@ -170,7 +170,15 @@ fn render(
 ) -> Result<Image> {
     let mut image = Image::new_with(frame.width, frame.height, limits)?;
     image.fill_rect(0, 0, frame.width, frame.height, FRAME);
-    let mut canvas = Canvas::new(image);
+    let mut canvas = Canvas::new(image).ok_or_else(|| {
+        Error::new(
+            ErrorCode::LimitExceeded,
+            format!(
+                "A view of {}x{} pixels needs a depth buffer larger than this platform can hold",
+                frame.width, frame.height
+            ),
+        )
+    })?;
     let color = |q: &Quad| {
         let c = palette
             .keys
