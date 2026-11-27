@@ -142,3 +142,47 @@ fn definitions_past_the_limit_are_reported() {
         "{errors:?}"
     );
 }
+
+#[test]
+fn exactly_one_past_the_limit_of_directives_is_reported() {
+    let limits = Limits {
+        max_definitions: 3,
+        ..Limits::default()
+    };
+    let mut loader = files(&[("shared.meshbox", "")]);
+    let at_limit = "import shared.meshbox\n".repeat(3);
+    assert!(check_with_loader(&at_limit, &limits, &mut loader).is_empty());
+    let past = "import shared.meshbox\n".repeat(4);
+    let errors = check_with_loader(&past, &limits, &mut loader);
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].code, ErrorCode::LimitExceeded);
+    assert_eq!(errors[0].position.unwrap().line, 4);
+}
+
+#[test]
+fn a_named_file_is_its_own_import() {
+    let mut loader = files(&[("art/b.meshbox", "import a.meshbox\n")]);
+    let errors = meshbox::check_file_with_loader(
+        "art/a.meshbox",
+        "import b.meshbox\npalette p\n  a #ffffff\n",
+        &Limits::default(),
+        &mut loader,
+    );
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].code, ErrorCode::Cycle);
+    assert_eq!(errors[0].file.as_deref(), Some("art/b.meshbox"));
+}
+
+#[test]
+fn a_loader_error_keeps_its_position() {
+    let mut loader = |_: &str| {
+        Err(Error::at(
+            meshbox::Position::new(2, 5),
+            ErrorCode::Syntax,
+            "The text is not UTF-8",
+        ))
+    };
+    let errors = check_with_loader("import bad.meshbox\n", &Limits::default(), &mut loader);
+    assert_eq!(errors.len(), 1);
+    assert!(errors[0].message.contains("line 2, column 5"), "{errors:?}");
+}

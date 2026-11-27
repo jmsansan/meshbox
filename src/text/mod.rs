@@ -61,6 +61,7 @@ const RESERVED_KEYS: &[char] = &[';', '(', ')', ',', '='];
 /// document, or every error found (up to the cap), ordered by file and position.
 pub(crate) fn parse(
     text: &str,
+    root_name: &str,
     limits: &Limits,
     loader: Option<&mut Loader>,
 ) -> Result<Document, Vec<Error>> {
@@ -76,7 +77,7 @@ pub(crate) fn parse(
             ),
         )]);
     }
-    let files = Files::load(text, limits, loader, &mut errors);
+    let files = Files::load(text, root_name, limits, loader, &mut errors);
     let lexed: Vec<Vec<Node>> = files
         .texts
         .iter()

@@ -155,63 +155,81 @@ fn utf8(bytes: Vec<u8>) -> meshbox::Result<String> {
     })
 }
 
+/// Reads at most `max` bytes: `None` when there are more.
+fn read_bounded(reader: impl std::io::Read, max: usize) -> std::io::Result<Option<Vec<u8>>> {
+    let mut bytes = Vec::new();
+    reader
+        .take(u64::try_from(max).unwrap_or(u64::MAX).saturating_add(1))
+        .read_to_end(&mut bytes)?;
+    Ok((bytes.len() <= max).then_some(bytes))
+}
+
+fn too_long(limit: usize) -> Error {
+    Error::new(
+        ErrorCode::LimitExceeded,
+        format!("The text is more than the limit of {limit} bytes"),
+    )
+}
+
 fn execute(options: &Options) -> ExitCode {
+    let limits = Limits::default();
+    let max = limits.max_text_bytes;
     let bytes = if options.file == "-" {
-        let mut bytes = Vec::new();
-        std::io::stdin().read_to_end(&mut bytes).map(|_| bytes)
+        read_bounded(std::io::stdin().lock(), max)
     } else {
-        std::fs::read(&options.file)
+        std::fs::File::open(&options.file).and_then(|f| read_bounded(f, max))
     };
     let text = match bytes {
-        Ok(bytes) => match utf8(bytes) {
+        Ok(Some(bytes)) => match utf8(bytes) {
             Ok(text) => text,
             Err(error) => return report(options, &[error], &[], EXIT_INVALID),
         },
+        Ok(None) => return report(options, &[too_long(max)], &[], EXIT_INVALID),
         Err(e) => {
             let error = Error::new(ErrorCode::Io, format!("cannot read {}: {e}", options.file));
             return report(options, &[error], &[], EXIT_IO);
         }
     };
-    let base = base_dir(options);
-    // Each file is read once and kept, so that every pass of a run sees the same text.
-    let mut cache: HashMap<String, meshbox::Result<String>> = HashMap::new();
-    // A named file is parsed as an import of itself, so that a file importing itself is
-    // a cycle and its diagnostics name it.
-    let name = Path::new(&options.file)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .filter(|n| {
-            options.file != "-" && !n.contains(['"', ';']) && !n.chars().any(char::is_whitespace)
-        })
-        .map(str::to_owned);
-    let root = match &name {
-        Some(name) => {
-            cache.insert(name.clone(), Ok(text));
-            format!("import \"{name}\"\n")
+    // The file given is parsed under its own name, so that importing itself is a cycle.
+    let root_name = if options.file == "-" {
+        String::new()
+    } else {
+        Path::new(&options.file)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    };
+    let mut loader = FileLoader {
+        base: base_dir(options),
+        cache: HashMap::new(),
+        files: HashMap::new(),
+        limit: max,
+        // What imports may add to the text: the rest of the limit.
+        budget: max - text.len(),
+        io_failed: false,
+    };
+    if options.file != "-" {
+        if let Ok(path) = std::fs::canonicalize(&options.file) {
+            loader.files.insert(path, root_name.clone());
         }
-        None => text,
+    }
+    let parsed = {
+        let mut load = |name: &str| loader.load(name);
+        Document::parse_file_with_loader(&root_name, &text, &limits, &mut load)
     };
-    let mut loader = |name: &str| -> meshbox::Result<String> {
-        cache
-            .entry(name.to_owned())
-            .or_insert_with(|| {
-                let path = base.join(name);
-                std::fs::read(&path)
-                    .map_err(|e| Error::new(ErrorCode::Io, format!("{}: {e}", path.display())))
-                    .and_then(utf8)
-            })
-            .clone()
-    };
-    let limits = Limits::default();
-    let document = match Document::parse_with_loader(&root, &limits, &mut loader) {
+    let document = match parsed {
         Ok(document) => document,
         Err(first) => {
             // All the errors, not only the first; the files are the ones already read.
-            let mut errors = meshbox::check_with_loader(&root, &limits, &mut loader);
+            let mut errors = {
+                let mut load = |name: &str| loader.load(name);
+                meshbox::check_file_with_loader(&root_name, &text, &limits, &mut load)
+            };
             if errors.is_empty() {
                 errors.push(first);
             }
-            let status = if errors.iter().any(|e| e.code == ErrorCode::Io) {
+            // A failed read is status 3 even when the diagnostics kept leave it out.
+            let status = if loader.io_failed || errors.iter().any(|e| e.code == ErrorCode::Io) {
                 EXIT_IO
             } else {
                 EXIT_INVALID
@@ -224,18 +242,71 @@ fn execute(options: &Options) -> ExitCode {
     }
     match render(options, &document, &limits) {
         Ok(written) => report(options, &[], &written, 0),
-        Err((error, status)) => report(options, &[error], &[], status),
+        Err((error, status, written)) => report(options, &[error], &written, status),
     }
 }
 
-/// Builds every output in memory, then writes them: nothing is written when any of
-/// them fails.
+/// Reads imports from disk, each once: every pass of a run sees the same text.
+struct FileLoader {
+    base: PathBuf,
+    /// The outcome of each name read.
+    cache: HashMap<String, meshbox::Result<String>>,
+    /// The name each file on disk was first read under.
+    files: HashMap<PathBuf, String>,
+    /// The limit of the text with its imports.
+    limit: usize,
+    /// The bytes that imports may still add, so that no more is ever held.
+    budget: usize,
+    /// Whether any read failed.
+    io_failed: bool,
+}
+
+impl FileLoader {
+    fn load(&mut self, name: &str) -> meshbox::Result<String> {
+        if let Some(outcome) = self.cache.get(name) {
+            return outcome.clone();
+        }
+        let outcome = self.read(name);
+        if outcome.as_ref().is_err_and(|e| e.code == ErrorCode::Io) {
+            self.io_failed = true;
+        }
+        self.cache.insert(name.to_owned(), outcome.clone());
+        outcome
+    }
+
+    fn read(&mut self, name: &str) -> meshbox::Result<String> {
+        let path = self.base.join(name);
+        let io = |e: std::io::Error| Error::new(ErrorCode::Io, format!("{}: {e}", path.display()));
+        // One file under two names, as `Art.meshbox` and `art.meshbox` on a file
+        // system that ignores case, would be read and defined twice.
+        let real = std::fs::canonicalize(&path).map_err(io)?;
+        if let Some(first) = self.files.get(&real) {
+            return Err(Error::new(
+                ErrorCode::DuplicateName,
+                format!("It is the file `{first}` under another name"),
+            ));
+        }
+        self.files.insert(real, name.to_owned());
+        let file = std::fs::File::open(&path).map_err(io)?;
+        let Some(bytes) = read_bounded(file, self.budget).map_err(io)? else {
+            return Err(too_long(self.limit));
+        };
+        let text = utf8(bytes)?;
+        self.budget -= text.len();
+        Ok(text)
+    }
+}
+
+/// Builds the preview, the palette and the manifest, which checks that everything
+/// fits, then writes each model's glb as it is built, so that one is in memory at a
+/// time. A failure while writing leaves the files written before it, which the
+/// outcome lists.
 fn render(
     options: &Options,
     document: &Document,
     limits: &Limits,
-) -> Result<Vec<PathBuf>, (Error, u8)> {
-    let invalid = |e: Error| (e, EXIT_INVALID);
+) -> Result<Vec<PathBuf>, (Error, u8, Vec<PathBuf>)> {
+    let invalid = |e: Error| (e, EXIT_INVALID, Vec::new());
     let names: Vec<&str> = match &options.model {
         Some(name) => {
             if document.model(name).is_none() {
@@ -262,22 +333,6 @@ fn render(
     }
     // One export: the vertex limit counts every model, and the texture is made once.
     let export = document.export_with(limits).map_err(invalid)?;
-    let mut files: Vec<(String, Vec<u8>)> = Vec::new();
-    let mut models_json = Vec::new();
-    for (name, mesh) in export.meshes().filter(|(n, _)| names.contains(n)) {
-        let glb = export.glb(name).map_err(invalid)?;
-        let file = format!("model-{name}.glb");
-        if let Some(model) = document.model(name) {
-            models_json.push(model_json(model, &file, mesh));
-        }
-        files.push((file, glb));
-    }
-    let palette = match export.palette_png() {
-        Some(png) => png.to_vec(),
-        // A document without colors still gets the file, one transparent texel.
-        None => png::encode(&meshbox::Image::new(1, 1).map_err(invalid)?),
-    };
-    files.push(("palette.png".to_owned(), palette));
     let preview_options = PreviewOptions {
         scale: options.scale,
         grid: true,
@@ -285,7 +340,23 @@ fn render(
     let preview = document
         .preview_models_with(&names, &preview_options, limits)
         .map_err(invalid)?;
+    let mut files: Vec<(String, Vec<u8>)> = Vec::new();
+    let palette = match export.palette_png() {
+        Some(png) => png.to_vec(),
+        // A document without colors still gets the file, one transparent texel.
+        None => png::encode(&meshbox::Image::new(1, 1).map_err(invalid)?),
+    };
+    files.push(("palette.png".to_owned(), palette));
     files.push(("preview.png".to_owned(), png::encode(&preview)));
+    drop(preview);
+    let models_json: Vec<String> = export
+        .meshes()
+        .filter(|(n, _)| names.contains(n))
+        .filter_map(|(name, mesh)| {
+            let model = document.model(name)?;
+            Some(model_json(model, &format!("model-{name}.glb"), mesh))
+        })
+        .collect();
     let mut json = String::from("{\n  \"format\": \"meshbox\",\n  \"version\": 1,\n");
     let _ = writeln!(
         json,
@@ -302,17 +373,30 @@ fn render(
     files.push(("meshbox.json".to_owned(), json.into_bytes()));
 
     let out = options.out.clone().unwrap_or_default();
-    let io = |e: std::io::Error, path: &Path| {
+    let mut written = Vec::new();
+    let io = |e: std::io::Error, path: &Path, written: &mut Vec<PathBuf>| {
         (
             Error::new(ErrorCode::Io, format!("{}: {e}", path.display())),
             EXIT_IO,
+            std::mem::take(written),
         )
     };
-    std::fs::create_dir_all(&out).map_err(|e| io(e, &out))?;
-    let mut written = Vec::new();
+    std::fs::create_dir_all(&out).map_err(|e| io(e, &out, &mut written))?;
+    for file in export.glb_files() {
+        let (name, bytes) = match file {
+            Ok(file) => file,
+            Err(e) => return Err((e, EXIT_INVALID, written)),
+        };
+        if !names.iter().any(|n| name == format!("model-{n}.glb")) {
+            continue;
+        }
+        let path = out.join(name);
+        std::fs::write(&path, bytes).map_err(|e| io(e, &path, &mut written))?;
+        written.push(path);
+    }
     for (name, bytes) in files {
         let path = out.join(name);
-        std::fs::write(&path, bytes).map_err(|e| io(e, &path))?;
+        std::fs::write(&path, bytes).map_err(|e| io(e, &path, &mut written))?;
         written.push(path);
     }
     Ok(written)

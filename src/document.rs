@@ -29,7 +29,7 @@ impl Document {
 
     /// Parses `text` within `limits`, returning the first error.
     pub fn parse_with(text: &str, limits: &Limits) -> Result<Self> {
-        text::parse(text, limits, None).map_err(|mut errors| errors.swap_remove(0))
+        text::parse(text, "", limits, None).map_err(|mut errors| errors.swap_remove(0))
     }
 
     /// Parses `text` within `limits`, reading the files it imports through `loader`,
@@ -57,7 +57,19 @@ impl Document {
         limits: &Limits,
         loader: &mut dyn FnMut(&str) -> Result<String>,
     ) -> Result<Self> {
-        text::parse(text, limits, Some(loader)).map_err(|mut errors| errors.swap_remove(0))
+        text::parse(text, "", limits, Some(loader)).map_err(|mut errors| errors.swap_remove(0))
+    }
+
+    /// Parses `text`, the contents of the file `name`, reading its imports through
+    /// `loader`, and returns the first error. Imports resolve against `name`'s
+    /// directory, and a file that imports itself is a cycle.
+    pub fn parse_file_with_loader(
+        name: &str,
+        text: &str,
+        limits: &Limits,
+        loader: &mut dyn FnMut(&str) -> Result<String>,
+    ) -> Result<Self> {
+        text::parse(text, name, limits, Some(loader)).map_err(|mut errors| errors.swap_remove(0))
     }
 
     /// The palettes, in definition order.
@@ -198,7 +210,7 @@ pub fn check(text: &str) -> Vec<Error> {
 
 /// Parses `text` within `limits` and returns every error, ordered by position.
 pub fn check_with(text: &str, limits: &Limits) -> Vec<Error> {
-    match text::parse(text, limits, None) {
+    match text::parse(text, "", limits, None) {
         Ok(_) => Vec::new(),
         Err(errors) => errors,
     }
@@ -212,7 +224,7 @@ pub fn check_with_loader(
     limits: &Limits,
     loader: &mut dyn FnMut(&str) -> Result<String>,
 ) -> Vec<Error> {
-    match text::parse(text, limits, Some(loader)) {
+    match text::parse(text, "", limits, Some(loader)) {
         Ok(_) => Vec::new(),
         Err(errors) => errors,
     }
@@ -266,5 +278,20 @@ impl Export {
                 Error::new(ErrorCode::UnknownName, format!("Unknown model `{name}`"))
             })?;
         gltf::glb(&[gltf::Part { name, mesh }], self.png.as_deref())
+    }
+}
+
+/// Parses `text`, the contents of the file `name`, reading its imports through
+/// `loader`, and returns every error, up to 1000. Imports resolve against `name`'s
+/// directory, and a file that imports itself is a cycle.
+pub fn check_file_with_loader(
+    name: &str,
+    text: &str,
+    limits: &Limits,
+    loader: &mut dyn FnMut(&str) -> Result<String>,
+) -> Vec<Error> {
+    match text::parse(text, name, limits, Some(loader)) {
+        Ok(_) => Vec::new(),
+        Err(errors) => errors,
     }
 }

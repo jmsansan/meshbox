@@ -325,3 +325,91 @@ fn review_cases() {
     );
     assert!(!out.exists());
 }
+
+#[test]
+fn review_cases_two() {
+    let d = dir("review-two");
+    // The file given takes none of the import depth: a chain as deep as the limit fits.
+    let depth = meshbox::Limits::default().max_nesting;
+    for i in 1..=depth + 1 {
+        std::fs::write(
+            d.join(format!("c{i}.meshbox")),
+            format!("import c{}.meshbox\n", i + 1),
+        )
+        .unwrap();
+    }
+    std::fs::write(d.join(format!("c{}.meshbox", depth)), "").unwrap();
+    let root = d.join("c0.meshbox");
+    std::fs::write(&root, "import c1.meshbox\n").unwrap();
+    assert_eq!(status(&meshbox(&["check", root.to_str().unwrap()])), 0);
+    std::fs::write(
+        d.join(format!("c{}.meshbox", depth)),
+        format!("import c{}.meshbox\n", depth + 1),
+    )
+    .unwrap();
+    std::fs::write(d.join(format!("c{}.meshbox", depth + 1)), "").unwrap();
+    assert_eq!(status(&meshbox(&["check", root.to_str().unwrap()])), 1);
+
+    // Nor any of the text: a file exactly at the limit fits.
+    let max = meshbox::Limits::default().max_text_bytes;
+    let line = format!(";{}\n", "x".repeat(1022));
+    let full = d.join("full.meshbox");
+    std::fs::write(&full, line.repeat(max / 1024)).unwrap();
+    assert_eq!(status(&meshbox(&["check", full.to_str().unwrap()])), 0);
+    let over = d.join("over.meshbox");
+    std::fs::write(&over, format!("{}\n", line.repeat(max / 1024))).unwrap();
+    let output = meshbox(&["check", over.to_str().unwrap(), "--json"]);
+    assert_eq!(status(&output), 1);
+    assert!(String::from_utf8_lossy(&output.stdout).contains("limit_exceeded"));
+    // An import that does not fit in what is left is refused.
+    let big = d.join("big.meshbox");
+    std::fs::write(&big, "import full.meshbox\n").unwrap();
+    let output = meshbox(&["check", big.to_str().unwrap(), "--json"]);
+    assert_eq!(status(&output), 1);
+    assert!(String::from_utf8_lossy(&output.stdout).contains("limit_exceeded"));
+
+    // Text that is not UTF-8 in an import says where.
+    std::fs::write(d.join("bad.meshbox"), b"palette p\n  a #ff\xff\n").unwrap();
+    let uses_bad = d.join("uses-bad.meshbox");
+    std::fs::write(&uses_bad, "import bad.meshbox\n").unwrap();
+    let output = meshbox(&["check", uses_bad.to_str().unwrap()]);
+    assert_eq!(status(&output), 1);
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("line 2, column 8"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // A failed read is status 3 even past the cap of diagnostics.
+    let capped = d.join("capped.meshbox");
+    std::fs::write(
+        &capped,
+        format!("{}import nowhere.meshbox\n", "\tx\n".repeat(1000)),
+    )
+    .unwrap();
+    assert_eq!(status(&meshbox(&["check", capped.to_str().unwrap()])), 3);
+}
+
+/// One file under two spellings is read once.
+#[cfg(windows)]
+#[test]
+fn a_case_alias_is_not_read_twice() {
+    let d = dir("alias");
+    let art = d.join("art.meshbox");
+    std::fs::write(&art, "import ART.meshbox\npalette p\n  a #ffffff\n").unwrap();
+    let output = meshbox(&["check", art.to_str().unwrap(), "--json"]);
+    assert_eq!(status(&output), 1);
+    let doc = json::parse(String::from_utf8(output.stdout).unwrap().trim());
+    assert_eq!(doc.get("diagnostics").len(), 1);
+    let shared = d.join("shared.meshbox");
+    std::fs::write(&shared, "palette q\n  a #ffffff\n").unwrap();
+    let root = d.join("root.meshbox");
+    std::fs::write(&root, "import shared.meshbox\nimport SHARED.meshbox\n").unwrap();
+    let output = meshbox(&["check", root.to_str().unwrap(), "--json"]);
+    let doc = json::parse(String::from_utf8(output.stdout).unwrap().trim());
+    assert_eq!(doc.get("diagnostics").len(), 1);
+    assert_eq!(
+        doc.get("diagnostics").at(0).get("code").str(),
+        "duplicate_name"
+    );
+}

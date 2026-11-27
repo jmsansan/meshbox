@@ -77,7 +77,7 @@ pub(crate) fn lex<'a>(
         }
         // Past `max_roots` definitions and imports, the rest of the text is not lexed,
         // and that is an error.
-        if stack.is_empty() && roots.len() > max_roots {
+        if stack.is_empty() && roots.len() >= max_roots {
             errors.push(Error::at(
                 Position::in_file(file, number, 1),
                 ErrorCode::LimitExceeded,

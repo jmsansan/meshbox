@@ -14,7 +14,7 @@ const MAX_DEPTH: usize = 256;
 /// Loads the text of a file by the name an `import` resolves to.
 pub(crate) type Loader<'l> = dyn FnMut(&str) -> Result<String> + 'l;
 
-/// The files of a parse: the text parsed (file 0, named "") and every file it
+/// The files of a parse: the text parsed (file 0, named by the caller, or "") and every file it
 /// imports, directly or not, each once.
 pub(crate) struct Files {
     pub names: Vec<String>,
@@ -31,15 +31,16 @@ impl Files {
     /// Loads every file that `root` imports, reporting import errors.
     pub fn load(
         root: &str,
+        root_name: &str,
         limits: &Limits,
         loader: Option<&mut Loader>,
         errors: &mut Errors,
     ) -> Files {
         let mut files = Files {
-            names: vec![String::new()],
+            names: vec![root_name.to_owned()],
             texts: vec![root.to_owned()],
             targets: HashMap::new(),
-            index: HashMap::from([(String::new(), 0)]),
+            index: HashMap::from([(root_name.to_owned(), 0)]),
             failed: HashSet::new(),
         };
         let mut loading = Loading {
@@ -159,9 +160,9 @@ impl Files {
                     stack.pop();
                 }
                 Err(e) => {
-                    loading.errors.push(
-                        name_token.error(e.code, format!("Cannot import `{name}`: {}", e.message)),
-                    );
+                    loading
+                        .errors
+                        .push(name_token.error(e.code, format!("Cannot import `{name}`: {e}")));
                     self.failed.insert(name);
                 }
             }

@@ -34,7 +34,8 @@
   on every platform.
 - Imports: `import NAME` (or `import "NAME"`) brings in another file's definitions,
   read through the caller's loader with `Document::parse_with_loader` and
-  `check_with_loader`; nothing touches the file system unless the loader does. Names
+  `check_with_loader`, or `Document::parse_file_with_loader` and
+  `check_file_with_loader` for text with a name of its own; nothing touches the file system unless the loader does. Names
   resolve against the importing file's directory; cycles are `cycle`, depth past
   `max_nesting` is `limit_exceeded`, and an error in an imported file names it.
 - The `meshbox` command: `check <file> [--json]` and
