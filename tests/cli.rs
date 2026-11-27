@@ -605,3 +605,19 @@ fn review_cases_eight() {
         "invalid_argument"
     );
 }
+
+#[test]
+fn a_model_named_json_is_not_the_flag() {
+    let output = meshbox(&[
+        "render",
+        "scene.meshbox",
+        "--model",
+        "--json",
+        "--out",
+        "out",
+        "--scale",
+        "33",
+    ]);
+    assert_eq!(status(&output), 2);
+    assert!(output.stdout.is_empty());
+}

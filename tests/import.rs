@@ -201,3 +201,11 @@ fn a_root_name_is_resolved_like_an_import() {
     assert_eq!(errors.len(), 1, "{errors:?}");
     assert_eq!(errors[0].code, ErrorCode::Cycle);
 }
+
+#[test]
+fn an_empty_import_name_is_a_syntax_error() {
+    let mut loader = files(&[]);
+    let errors = check_with_loader("import \"\"\n", &Limits::default(), &mut loader);
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].code, ErrorCode::Syntax);
+}

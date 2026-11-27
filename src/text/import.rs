@@ -93,6 +93,13 @@ impl Files {
                 .strip_prefix('"')
                 .and_then(|t| t.strip_suffix('"'))
                 .unwrap_or(name_token.text);
+            if written.is_empty() {
+                loading.errors.push(name_token.error(
+                    ErrorCode::Syntax,
+                    "Expected the name of a file to import, not an empty one",
+                ));
+                continue;
+            }
             let name = resolve(&self.names[file as usize], written);
             let line = name_token.pos.line;
             if name.len() > MAX_NAME_BYTES {
@@ -213,8 +220,15 @@ pub(crate) fn resolve(from: &str, name: &str) -> String {
         let b = n.as_bytes();
         b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':'
     };
-    let joined = if name.starts_with('/') || drive(name) {
+    let joined = if drive(name) || name.starts_with("//") {
         name.to_owned()
+    } else if name.starts_with('/') {
+        // `/x` from a file on a drive is `x` on that drive.
+        if drive(from) {
+            format!("{}{name}", &from[..2])
+        } else {
+            name.to_owned()
+        }
     } else {
         match from.rfind('/') {
             Some(i) => format!("{}/{name}", &from[..i]),
@@ -268,5 +282,9 @@ mod tests {
         assert_eq!(resolve("/art/scene", "../../shared"), "/shared");
         assert_eq!(resolve("parts\\body", "palette"), "parts/palette");
         assert_eq!(resolve("", "parts\\body"), "parts/body");
+        assert_eq!(
+            resolve("C:/project/scene", "\\project\\shared"),
+            "C:/project/shared"
+        );
     }
 }

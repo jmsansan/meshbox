@@ -70,19 +70,36 @@ pub fn run(args: &[String]) -> ExitCode {
     let options = match parse_args(args) {
         Ok(options) => options,
         Err(message) => {
-            // With --json the outcome is one JSON object, bad usage included.
-            let printed = if args.iter().any(|a| a == "--json") {
-                say(&format!(
-                    "{{\"version\":1,\"ok\":false,\"diagnostics\":[{{\"code\":\"invalid_argument\",\"severity\":\"error\",\"message\":{}}}],\"written\":[]}}",
-                    quote(&message)
-                ))
-            } else {
-                warn(&format!("meshbox: {message}\n\n{USAGE}"))
-            };
-            return ExitCode::from(if printed { EXIT_USAGE } else { EXIT_IO });
+            // `--json` as the value of another option, a model's name, is not the flag.
+            let mut json = false;
+            let mut iter = args.iter();
+            while let Some(arg) = iter.next() {
+                match arg.as_str() {
+                    "--model" | "--out" | "--scale" => {
+                        iter.next();
+                    }
+                    "--json" => json = true,
+                    _ => {}
+                }
+            }
+            return usage_error(&message, json);
         }
     };
     execute(&options)
+}
+
+/// Reports bad usage, as one JSON object with `json`, and returns status 2 (3 when
+/// the report cannot be written).
+pub fn usage_error(message: &str, json: bool) -> ExitCode {
+    let printed = if json {
+        say(&format!(
+            "{{\"version\":1,\"ok\":false,\"diagnostics\":[{{\"code\":\"invalid_argument\",\"severity\":\"error\",\"message\":{}}}],\"written\":[]}}",
+            quote(message)
+        ))
+    } else {
+        warn(&format!("meshbox: {message}\n\n{USAGE}"))
+    };
+    ExitCode::from(if printed { EXIT_USAGE } else { EXIT_IO })
 }
 
 fn parse_args(args: &[String]) -> Result<Options, String> {
@@ -167,7 +184,7 @@ fn shown(options: &Options, name: &str) -> String {
     } else {
         base.as_path()
     };
-    let Ok(dir) = std::fs::canonicalize(dir) else {
+    let Ok(dir) = std::path::absolute(dir) else {
         return name.to_owned();
     };
     let dir = format!("{}/", import_name(&dir));
@@ -186,7 +203,7 @@ fn shortened(options: &Options, message: &str) -> String {
     } else {
         base.as_path()
     };
-    let Ok(dir) = std::fs::canonicalize(dir) else {
+    let Ok(dir) = std::path::absolute(dir) else {
         return message.to_owned();
     };
     let prefix = if base.as_os_str().is_empty() || options.file == "-" {
@@ -259,16 +276,17 @@ fn execute(options: &Options) -> ExitCode {
             return report(options, &[error], &[], EXIT_IO);
         }
     };
-    // The file given is parsed under its own name, so that importing itself is a cycle.
     // The file given goes by its full path, so that every import resolves to a full
     // path too: a file reached by a relative and by an absolute spelling is one file.
+    // Links are not followed, so imports resolve from where the file is named, as for
+    // an imported file.
     let root_name = if options.file == "-" {
-        std::fs::canonicalize(".")
+        std::path::absolute(".")
             .ok()
             .map(|dir| format!("{}/-", import_name(&dir)))
             .unwrap_or_default()
     } else {
-        std::fs::canonicalize(&options.file)
+        std::path::absolute(&options.file)
             .ok()
             .map(|path| import_name(&path))
             .unwrap_or_else(|| {

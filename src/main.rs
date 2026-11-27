@@ -16,15 +16,8 @@ fn main() -> ExitCode {
     {
         Ok(args) => args,
         Err(_) => {
-            let printed = cli::warn(&format!(
-                "meshbox: arguments must be valid Unicode\n\n{}",
-                cli::USAGE
-            ));
-            return ExitCode::from(if printed {
-                cli::EXIT_USAGE
-            } else {
-                cli::EXIT_IO
-            });
+            let json = std::env::args_os().any(|a| a == "--json");
+            return cli::usage_error("arguments must be valid Unicode", json);
         }
     };
     cli::run(&args)
